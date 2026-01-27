@@ -219,10 +219,19 @@ async def analyze_url(request: AnalyzeRequest):
 
 @app.get("/api/health")
 async def health():
+    """Health check with FlareSolverr status"""
+    fs_status = "unknown"
+    if fetcher and fetcher.flaresolverr:
+        try:
+            fs_status = "available" if await fetcher.flaresolverr.is_available() else "unavailable"
+        except Exception as e:
+            fs_status = f"error: {str(e)}"
+
     return {
         "status": "ok",
         "fetcher": fetcher is not None,
         "flaresolverr_available": fetcher.flaresolverr_available if fetcher else False,
+        "flaresolverr_status": fs_status,
         "flaresolverr_url": os.getenv("FLARESOLVERR_URL", "NOT SET"),
         "proxy_configured": bool(fetcher.proxy_url) if fetcher else False,
         "google_cache": google_cache is not None,
