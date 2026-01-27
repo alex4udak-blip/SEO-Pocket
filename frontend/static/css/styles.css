@@ -481,6 +481,7 @@ body {
 
 .meta-tag.lang .meta-tag-value { color: var(--accent-blue); }
 .meta-tag.canonical .meta-tag-value { color: var(--accent-teal); }
+.meta-tag.google-canonical .meta-tag-value { color: #22c55e; font-weight: 500; }
 .meta-tag.robots .meta-tag-value { color: var(--accent-yellow); }
 .meta-tag.title .meta-tag-value { color: var(--accent-purple); }
 

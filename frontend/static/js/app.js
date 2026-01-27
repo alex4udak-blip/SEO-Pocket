@@ -153,7 +153,27 @@ class SEOPocketApp {
         this.elements.descriptionCard.textContent = data.description || 'Not found';
 
         if (data.html) {
-            const blob = new Blob([data.html], { type: 'text/html' });
+            // Add base tag to resolve relative URLs (images, CSS, etc.)
+            let htmlWithBase = data.html;
+            const baseUrl = data.url || data.canonical;
+            if (baseUrl) {
+                // Extract origin from URL
+                try {
+                    const urlObj = new URL(baseUrl);
+                    const baseTag = `<base href="${urlObj.origin}/">`;
+                    // Insert base tag after <head> or at beginning
+                    if (htmlWithBase.includes('<head>')) {
+                        htmlWithBase = htmlWithBase.replace('<head>', `<head>${baseTag}`);
+                    } else if (htmlWithBase.includes('<head ')) {
+                        htmlWithBase = htmlWithBase.replace(/<head[^>]*>/, `$&${baseTag}`);
+                    } else {
+                        htmlWithBase = baseTag + htmlWithBase;
+                    }
+                } catch (e) {
+                    console.warn('Failed to create base URL:', e);
+                }
+            }
+            const blob = new Blob([htmlWithBase], { type: 'text/html' });
             this.elements.previewFrame.src = URL.createObjectURL(blob);
         }
 
@@ -194,12 +214,17 @@ class SEOPocketApp {
             tags.push({ label: 'SERP Position', value: `#${data.serp_position}`, class: 'serp-position' });
         }
 
+        // Google indexed canonical (from DataForSEO - what Google actually sees)
+        if (data.google_canonical) {
+            tags.push({ label: 'Google Canonical', value: data.google_canonical, class: 'google-canonical' });
+        }
+
         // Live fetch data
         if (data.html_lang) {
             tags.push({ label: 'Lang', value: data.html_lang, class: 'lang' });
         }
         if (data.canonical) {
-            tags.push({ label: 'Canonical', value: data.canonical, class: 'canonical' });
+            tags.push({ label: 'Live Canonical', value: data.canonical, class: 'canonical' });
         }
         if (data.robots) {
             tags.push({ label: 'Robots', value: data.robots, class: 'robots' });
