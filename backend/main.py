@@ -222,6 +222,9 @@ async def health():
     return {
         "status": "ok",
         "fetcher": fetcher is not None,
+        "flaresolverr_available": fetcher.flaresolverr_available if fetcher else False,
+        "flaresolverr_url": os.getenv("FLARESOLVERR_URL", "NOT SET"),
+        "proxy_configured": bool(fetcher.proxy_url) if fetcher else False,
         "google_cache": google_cache is not None,
         "dataforseo": dataforseo is not None and dataforseo.is_configured()
     }
