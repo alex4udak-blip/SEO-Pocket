@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 from fetcher import GooglebotFetcher
 from parser import HTMLParser
 from dataforseo import DataForSEOClient
+from google_cache import GoogleCacheFetcher
 
 # Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -29,12 +30,13 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 # Global instances
 fetcher: Optional[GooglebotFetcher] = None
 dataforseo: Optional[DataForSEOClient] = None
+google_cache: Optional[GoogleCacheFetcher] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage fetcher lifecycle"""
-    global fetcher, dataforseo
+    global fetcher, dataforseo, google_cache
     fetcher = GooglebotFetcher()
     await fetcher.start()
 
@@ -43,12 +45,18 @@ async def lifespan(app: FastAPI):
     if dataforseo.is_configured():
         await dataforseo.start()
 
+    # Initialize Google Cache fetcher
+    google_cache = GoogleCacheFetcher()
+    await google_cache.start()
+
     yield
 
     if fetcher:
         await fetcher.stop()
     if dataforseo:
         await dataforseo.stop()
+    if google_cache:
+        await google_cache.stop()
 
 
 app = FastAPI(
@@ -89,12 +97,20 @@ class AnalyzeResponse(BaseModel):
     html: Optional[str] = None
     error: Optional[str] = None
     fetch_time_ms: int = 0
-    # DataForSEO indexed data
+    # Google Cache indexed data
     site_indexed: bool = False
     indexed_title: Optional[str] = None
     indexed_description: Optional[str] = None
-    indexed_url: Optional[str] = None
+    indexed_h1: Optional[str] = None
+    google_canonical: Optional[str] = None
+    cache_date: Optional[str] = None
+    indexed_html_lang: Optional[str] = None
+    indexed_hreflang: list[dict] = []
+    cache_html: Optional[str] = None
+    # DataForSEO fallback (SERP data)
     serp_position: Optional[int] = None
+    dataforseo_title: Optional[str] = None
+    dataforseo_description: Optional[str] = None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -105,7 +121,7 @@ async def root():
 @app.post("/api/analyze", response_model=AnalyzeResponse)
 async def analyze_url(request: AnalyzeRequest):
     """Analyze URL as Googlebot sees it"""
-    global fetcher, dataforseo
+    global fetcher, dataforseo, google_cache
 
     if not fetcher:
         raise HTTPException(status_code=503, detail="Fetcher not initialized")
@@ -128,10 +144,19 @@ async def analyze_url(request: AnalyzeRequest):
         parser = HTMLParser(result["html"])
         parsed = parser.parse()
 
-        # Get indexed data from DataForSEO (if configured)
-        indexed_data = {}
+        # Get indexed data from Google Cache (primary source)
+        cache_data = {}
+        if google_cache:
+            cache_data = await google_cache.get_google_cache_data(url)
+
+        # Fallback to DataForSEO if Google Cache failed/blocked
+        dataforseo_data = {}
         if dataforseo and dataforseo.is_configured():
-            indexed_data = await dataforseo.get_indexed_data(url)
+            if not cache_data.get("success"):
+                dataforseo_data = await dataforseo.get_indexed_data(url)
+
+        # Determine if site is indexed (from cache or DataForSEO)
+        site_indexed = cache_data.get("site_indexed", False) or dataforseo_data.get("indexed", False)
 
         return AnalyzeResponse(
             success=True,
@@ -146,12 +171,20 @@ async def analyze_url(request: AnalyzeRequest):
             status_code=result.get("status_code", 200),
             html=result["html"],
             fetch_time_ms=result.get("fetch_time_ms", 0),
-            # DataForSEO indexed data
-            site_indexed=indexed_data.get("indexed", False),
-            indexed_title=indexed_data.get("indexed_title"),
-            indexed_description=indexed_data.get("indexed_description"),
-            indexed_url=indexed_data.get("indexed_url"),
-            serp_position=indexed_data.get("serp_position")
+            # Google Cache indexed data (primary)
+            site_indexed=site_indexed,
+            indexed_title=cache_data.get("indexed_title"),
+            indexed_description=cache_data.get("indexed_description"),
+            indexed_h1=cache_data.get("indexed_h1"),
+            google_canonical=cache_data.get("google_canonical"),
+            cache_date=cache_data.get("cache_date"),
+            indexed_html_lang=cache_data.get("indexed_html_lang"),
+            indexed_hreflang=cache_data.get("indexed_hreflang", []),
+            cache_html=cache_data.get("cache_html"),
+            # DataForSEO fallback
+            serp_position=dataforseo_data.get("serp_position"),
+            dataforseo_title=dataforseo_data.get("indexed_title"),
+            dataforseo_description=dataforseo_data.get("indexed_description")
         )
 
     except Exception as e:
@@ -167,6 +200,7 @@ async def health():
     return {
         "status": "ok",
         "fetcher": fetcher is not None,
+        "google_cache": google_cache is not None,
         "dataforseo": dataforseo is not None and dataforseo.is_configured()
     }
 
