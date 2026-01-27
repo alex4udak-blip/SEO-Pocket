@@ -1,22 +1,11 @@
 # SEO-Pocket Dockerfile
-FROM python:3.11-slim
-
-# Install system dependencies for Playwright
-RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
 
 WORKDIR /app
 
 # Copy requirements first for caching
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Install Playwright browsers
-RUN playwright install chromium
-RUN playwright install-deps chromium
 
 # Copy application code
 COPY backend/ ./backend/
