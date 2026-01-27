@@ -4,11 +4,18 @@ Googlebot View - See pages as Google sees them
 """
 
 import os
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -37,8 +44,17 @@ google_cache: Optional[GoogleCacheFetcher] = None
 async def lifespan(app: FastAPI):
     """Manage fetcher lifecycle"""
     global fetcher, dataforseo, google_cache
+
+    print("=== Starting SmartFetcher ===")
+    print(f"FLARESOLVERR_URL: {os.getenv('FLARESOLVERR_URL', 'NOT SET')}")
+    print(f"PROXY_URL: {'SET' if os.getenv('PROXY_URL') else 'NOT SET'}")
+
     fetcher = SmartFetcher()
     await fetcher.start()
+
+    print(f"=== SmartFetcher initialized ===")
+    print(f"FlareSolverr available: {fetcher.flaresolverr_available}")
+    print(f"Proxy URL configured: {bool(fetcher.proxy_url)}")
 
     # Initialize DataForSEO if configured
     dataforseo = DataForSEOClient()
