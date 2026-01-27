@@ -10,6 +10,8 @@ import re
 from typing import Optional, List
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
+from flaresolverr_client import FlareSolverrClient
+
 logger = logging.getLogger(__name__)
 
 # Try stealth import
@@ -23,9 +25,9 @@ except ImportError:
 class SmartFetcher:
     """
     Smart fetcher that tries multiple strategies:
-    1. Direct Googlebot request
-    2. Stealth Chrome (if Cloudflare detected)
-    3. Wait for Cloudflare challenge resolution
+    1. Direct Googlebot request (fastest, works for non-protected sites)
+    2. Stealth Chrome with Googlebot UA (for light Cloudflare)
+    3. FlareSolverr (for heavy Cloudflare protection)
     """
 
     # User Agents
@@ -52,14 +54,19 @@ class SmartFetcher:
         "cdn-cgi/challenge",
     ]
 
-    def __init__(self, timeout: int = 30000, max_cf_wait: int = 20):
+    def __init__(self, timeout: int = 30000, max_cf_wait: int = 20, proxy_url: str = None):
         self.timeout = timeout
         self.max_cf_wait = max_cf_wait
         self.playwright = None
         self.browser: Optional[Browser] = None
+        self.flaresolverr: Optional[FlareSolverrClient] = None
+        self.flaresolverr_available: bool = False
+        # Czech proxy fallback (format: http://user:pass@host:port)
+        import os
+        self.proxy_url = proxy_url or os.getenv("PROXY_URL")
 
     async def start(self):
-        """Initialize browser"""
+        """Initialize browser and FlareSolverr"""
         self.playwright = await async_playwright().start()
         self.browser = await self.playwright.chromium.launch(
             headless=True,
@@ -73,12 +80,23 @@ class SmartFetcher:
             ]
         )
 
+        # Initialize FlareSolverr client
+        self.flaresolverr = FlareSolverrClient()
+        await self.flaresolverr.start()
+        self.flaresolverr_available = await self.flaresolverr.is_available()
+        if self.flaresolverr_available:
+            logger.info("FlareSolverr is available - will use for Cloudflare bypass")
+        else:
+            logger.warning("FlareSolverr not available - some sites may not work")
+
     async def stop(self):
         """Cleanup"""
         if self.browser:
             await self.browser.close()
         if self.playwright:
             await self.playwright.stop()
+        if self.flaresolverr:
+            await self.flaresolverr.stop()
 
     def _is_cloudflare(self, html: str) -> bool:
         """Check if Cloudflare challenge"""
@@ -195,36 +213,126 @@ class SmartFetcher:
             if context:
                 await context.close()
 
+    async def _fetch_with_proxy(self, url: str) -> dict:
+        """Fetch URL through Czech proxy with Googlebot UA"""
+        if not self.proxy_url:
+            return {"success": False, "error": "No proxy configured"}
+
+        context = None
+        page = None
+        start_time = time.time()
+
+        try:
+            context = await self.browser.new_context(
+                user_agent=self.GOOGLEBOT_UA,
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+                timezone_id="Europe/Prague",
+                proxy={"server": self.proxy_url}
+            )
+
+            page = await context.new_page()
+
+            if HAS_STEALTH:
+                await stealth_async(page)
+
+            response = await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
+
+            if not response:
+                return {"success": False, "error": "No response via proxy"}
+
+            html = await page.content()
+
+            # Wait for Cloudflare if detected
+            if self._is_cloudflare(html):
+                for _ in range(self.max_cf_wait):
+                    await asyncio.sleep(1)
+                    html = await page.content()
+                    if not self._is_cloudflare(html):
+                        break
+
+            # Wait for dynamic content
+            try:
+                await page.wait_for_load_state("networkidle", timeout=5000)
+                html = await page.content()
+            except:
+                pass
+
+            return {
+                "success": True,
+                "html": html,
+                "status_code": response.status,
+                "final_url": page.url,
+                "fetch_time_ms": int((time.time() - start_time) * 1000),
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "fetch_time_ms": int((time.time() - start_time) * 1000),
+            }
+
+        finally:
+            if page:
+                await page.close()
+            if context:
+                await context.close()
+
     async def fetch(self, url: str) -> dict:
         """
-        Smart fetch - tries multiple strategies:
-        1. Googlebot UA (for cloaking detection)
-        2. If Cloudflare, try Chrome UA with stealth
+        Smart fetch - tries multiple strategies in order:
+        1. Googlebot UA direct (fastest, works for non-protected sites)
+        2. Googlebot UA with stealth (for light Cloudflare)
+        3. FlareSolverr with Googlebot UA (for heavy Cloudflare)
+        4. Czech proxy fallback (last resort)
         """
         if not self.browser:
             return {"success": False, "error": "Browser not initialized"}
 
-        # Strategy 1: Googlebot UA
-        logger.info(f"Trying Googlebot UA for {url}")
+        start_time = time.time()
+
+        # Strategy 1: Direct Googlebot UA (fastest)
+        logger.info(f"[Strategy 1] Trying direct Googlebot UA for {url}")
         result = await self._fetch_with_ua(url, self.GOOGLEBOT_UA, use_stealth=False)
 
-        if result.get("success"):
-            result["strategy"] = "googlebot"
+        if result.get("success") and not self._is_cloudflare(result.get("html", "")):
+            result["strategy"] = "googlebot_direct"
             result["seo_data"] = self._extract_seo_data(result.get("html", ""))
             return result
 
-        # Strategy 2: Chrome UA with stealth (if Cloudflare detected)
-        if result.get("cloudflare"):
-            logger.info(f"Cloudflare detected, trying Chrome UA with stealth for {url}")
-            result = await self._fetch_with_ua(url, self.CHROME_UA, use_stealth=True)
+        # Strategy 2: Googlebot UA with stealth (for light Cloudflare)
+        logger.info(f"[Strategy 2] Trying Googlebot UA with stealth for {url}")
+        result = await self._fetch_with_ua(url, self.GOOGLEBOT_UA, use_stealth=True)
 
-            if result.get("success"):
-                result["strategy"] = "chrome_stealth"
+        if result.get("success") and not self._is_cloudflare(result.get("html", "")):
+            result["strategy"] = "googlebot_stealth"
+            result["seo_data"] = self._extract_seo_data(result.get("html", ""))
+            return result
+
+        # Strategy 3: FlareSolverr (for heavy Cloudflare)
+        if self.flaresolverr_available:
+            logger.info(f"[Strategy 3] Trying FlareSolverr for {url}")
+            result = await self.flaresolverr.fetch(url, googlebot_ua=True)
+
+            if result.get("success") and not self._is_cloudflare(result.get("html", "")):
+                result["strategy"] = "flaresolverr"
                 result["seo_data"] = self._extract_seo_data(result.get("html", ""))
-                # Note: This might not show cloaked content
-                result["warning"] = "Used Chrome UA - may not show cloaked content"
                 return result
 
+        # Strategy 4: Czech proxy fallback
+        if self.proxy_url:
+            logger.info(f"[Strategy 4] Trying Czech proxy for {url}")
+            result = await self._fetch_with_proxy(url)
+
+            if result.get("success") and not self._is_cloudflare(result.get("html", "")):
+                result["strategy"] = "czech_proxy"
+                result["seo_data"] = self._extract_seo_data(result.get("html", ""))
+                return result
+
+        # All strategies failed
+        result["fetch_time_ms"] = int((time.time() - start_time) * 1000)
+        result["error"] = "All bypass strategies failed - Cloudflare protection too strong"
         return result
 
 

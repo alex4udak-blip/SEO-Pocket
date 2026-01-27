@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # Main SEO-Pocket backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - PORT=8000
+      - FLARESOLVERR_URL=http://flaresolverr:8191/v1
+      - PROXY_URL=${PROXY_URL:-}
+      - DATAFORSEO_LOGIN=${DATAFORSEO_LOGIN:-}
+      - DATAFORSEO_PASSWORD=${DATAFORSEO_PASSWORD:-}
+    depends_on:
+      - flaresolverr
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # FlareSolverr - Cloudflare bypass service
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    environment:
+      - LOG_LEVEL=info
+      - LOG_HTML=false
+      - CAPTCHA_SOLVER=none
+      - TZ=Europe/Prague
+    ports:
+      - "8191:8191"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
