@@ -264,6 +264,7 @@ body {
     mask-composite: exclude;
     opacity: 0;
     transition: opacity var(--duration-normal);
+    pointer-events: none;
 }
 
 .search-box:hover,
