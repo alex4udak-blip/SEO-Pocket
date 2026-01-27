@@ -151,30 +151,45 @@ async def analyze_url(request: AnalyzeRequest):
         # Fetch page as Googlebot
         result = await fetcher.fetch(url)
 
+        # Even if fetch failed, try to get cached/indexed data
+        cache_data = {}
+        dataforseo_data = {}
+
+        if google_cache:
+            cache_data = await google_cache.get_google_cache_data(url)
+
+        if dataforseo and dataforseo.is_configured():
+            dataforseo_data = await dataforseo.get_indexed_data(url)
+
         if not result["success"]:
+            # Return error but include any available cached data
+            site_indexed = cache_data.get("site_indexed", False) or dataforseo_data.get("indexed", False)
             return AnalyzeResponse(
                 success=False,
                 url=url,
                 error=result.get("error", "Failed to fetch page"),
-                fetch_time_ms=result.get("fetch_time_ms", 0)
+                fetch_time_ms=result.get("fetch_time_ms", 0),
+                # Include cached data even on failure
+                site_indexed=site_indexed,
+                indexed_title=cache_data.get("indexed_title") or dataforseo_data.get("indexed_title"),
+                indexed_description=cache_data.get("indexed_description") or dataforseo_data.get("indexed_description"),
+                indexed_h1=cache_data.get("indexed_h1"),
+                google_canonical=cache_data.get("google_canonical"),
+                indexed_html_lang=cache_data.get("indexed_html_lang"),
+                indexed_hreflang=cache_data.get("indexed_hreflang", []),
+                cache_html=cache_data.get("cache_html"),
+                cache_date=cache_data.get("cache_date"),
+                dataforseo_title=dataforseo_data.get("indexed_title"),
+                dataforseo_description=dataforseo_data.get("indexed_description"),
+                serp_position=dataforseo_data.get("serp_position"),
+                warning="Live fetch failed - showing cached/indexed data only" if site_indexed else None
             )
 
         # Parse HTML
         parser = HTMLParser(result["html"])
         parsed = parser.parse()
 
-        # Get indexed data from Google Cache (primary source)
-        cache_data = {}
-        if google_cache:
-            cache_data = await google_cache.get_google_cache_data(url)
-
-        # Fallback to DataForSEO if Google Cache failed/blocked
-        dataforseo_data = {}
-        if dataforseo and dataforseo.is_configured():
-            if not cache_data.get("success"):
-                dataforseo_data = await dataforseo.get_indexed_data(url)
-
-        # Determine if site is indexed (from cache or DataForSEO)
+        # Determine if site is indexed (cache_data and dataforseo_data already fetched above)
         site_indexed = cache_data.get("site_indexed", False) or dataforseo_data.get("indexed", False)
 
         return AnalyzeResponse(
