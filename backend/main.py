@@ -174,7 +174,7 @@ async def analyze_url(request: AnalyzeRequest):
                 indexed_title=cache_data.get("indexed_title") or dataforseo_data.get("indexed_title"),
                 indexed_description=cache_data.get("indexed_description") or dataforseo_data.get("indexed_description"),
                 indexed_h1=cache_data.get("indexed_h1"),
-                google_canonical=cache_data.get("google_canonical"),
+                google_canonical=cache_data.get("google_canonical") or dataforseo_data.get("indexed_url"),
                 indexed_html_lang=cache_data.get("indexed_html_lang"),
                 indexed_hreflang=cache_data.get("indexed_hreflang", []),
                 cache_html=cache_data.get("cache_html"),
@@ -208,12 +208,12 @@ async def analyze_url(request: AnalyzeRequest):
             # Fetch strategy info
             strategy=result.get("strategy"),
             warning=result.get("warning"),
-            # Google Cache indexed data (primary)
+            # Google Cache indexed data (primary) + DataForSEO fallback
             site_indexed=site_indexed,
-            indexed_title=cache_data.get("indexed_title"),
-            indexed_description=cache_data.get("indexed_description"),
+            indexed_title=cache_data.get("indexed_title") or dataforseo_data.get("indexed_title"),
+            indexed_description=cache_data.get("indexed_description") or dataforseo_data.get("indexed_description"),
             indexed_h1=cache_data.get("indexed_h1"),
-            google_canonical=cache_data.get("google_canonical"),
+            google_canonical=cache_data.get("google_canonical") or dataforseo_data.get("indexed_url"),
             cache_date=cache_data.get("cache_date"),
             indexed_html_lang=cache_data.get("indexed_html_lang"),
             indexed_hreflang=cache_data.get("indexed_hreflang", []),
