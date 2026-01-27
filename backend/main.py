@@ -1,0 +1,176 @@
+"""
+SEO-Pocket Backend
+Googlebot View - See pages as Google sees them
+"""
+
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, HttpUrl
+from typing import Optional
+from contextlib import asynccontextmanager
+
+from fetcher import GooglebotFetcher
+from parser import HTMLParser
+from dataforseo import DataForSEOClient
+
+# Paths
+BASE_DIR = Path(__file__).resolve().parent.parent
+FRONTEND_DIR = BASE_DIR / "frontend"
+
+# Global instances
+fetcher: Optional[GooglebotFetcher] = None
+dataforseo: Optional[DataForSEOClient] = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage fetcher lifecycle"""
+    global fetcher, dataforseo
+    fetcher = GooglebotFetcher()
+    await fetcher.start()
+
+    # Initialize DataForSEO if configured
+    dataforseo = DataForSEOClient()
+    if dataforseo.is_configured():
+        await dataforseo.start()
+
+    yield
+
+    if fetcher:
+        await fetcher.stop()
+    if dataforseo:
+        await dataforseo.stop()
+
+
+app = FastAPI(
+    title="SEO-Pocket",
+    description="View pages as Googlebot sees them",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Static files
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
+
+
+class AnalyzeRequest(BaseModel):
+    url: HttpUrl
+
+
+class AnalyzeResponse(BaseModel):
+    success: bool
+    url: str
+    title: Optional[str] = None
+    h1: Optional[str] = None
+    description: Optional[str] = None
+    canonical: Optional[str] = None
+    html_lang: Optional[str] = None
+    hreflang: list[dict] = []
+    robots: Optional[str] = None
+    status_code: int = 200
+    html: Optional[str] = None
+    error: Optional[str] = None
+    fetch_time_ms: int = 0
+    # DataForSEO indexed data
+    site_indexed: bool = False
+    indexed_title: Optional[str] = None
+    indexed_description: Optional[str] = None
+    indexed_url: Optional[str] = None
+    serp_position: Optional[int] = None
+
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    return FileResponse(str(FRONTEND_DIR / "index.html"))
+
+
+@app.post("/api/analyze", response_model=AnalyzeResponse)
+async def analyze_url(request: AnalyzeRequest):
+    """Analyze URL as Googlebot sees it"""
+    global fetcher, dataforseo
+
+    if not fetcher:
+        raise HTTPException(status_code=503, detail="Fetcher not initialized")
+
+    url = str(request.url)
+
+    try:
+        # Fetch page as Googlebot
+        result = await fetcher.fetch(url)
+
+        if not result["success"]:
+            return AnalyzeResponse(
+                success=False,
+                url=url,
+                error=result.get("error", "Failed to fetch page"),
+                fetch_time_ms=result.get("fetch_time_ms", 0)
+            )
+
+        # Parse HTML
+        parser = HTMLParser(result["html"])
+        parsed = parser.parse()
+
+        # Get indexed data from DataForSEO (if configured)
+        indexed_data = {}
+        if dataforseo and dataforseo.is_configured():
+            indexed_data = await dataforseo.get_indexed_data(url)
+
+        return AnalyzeResponse(
+            success=True,
+            url=url,
+            title=parsed["title"],
+            h1=parsed["h1"],
+            description=parsed["description"],
+            canonical=parsed["canonical"],
+            html_lang=parsed["html_lang"],
+            hreflang=parsed["hreflang"],
+            robots=parsed["robots"],
+            status_code=result.get("status_code", 200),
+            html=result["html"],
+            fetch_time_ms=result.get("fetch_time_ms", 0),
+            # DataForSEO indexed data
+            site_indexed=indexed_data.get("indexed", False),
+            indexed_title=indexed_data.get("indexed_title"),
+            indexed_description=indexed_data.get("indexed_description"),
+            indexed_url=indexed_data.get("indexed_url"),
+            serp_position=indexed_data.get("serp_position")
+        )
+
+    except Exception as e:
+        return AnalyzeResponse(
+            success=False,
+            url=url,
+            error=str(e)
+        )
+
+
+@app.get("/api/health")
+async def health():
+    return {
+        "status": "ok",
+        "fetcher": fetcher is not None,
+        "dataforseo": dataforseo is not None and dataforseo.is_configured()
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
