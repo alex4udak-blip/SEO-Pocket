@@ -18,7 +18,7 @@ from pydantic import BaseModel, HttpUrl
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fetcher import GooglebotFetcher
+from smart_fetcher import SmartFetcher
 from parser import HTMLParser
 from dataforseo import DataForSEOClient
 from google_cache import GoogleCacheFetcher
@@ -28,7 +28,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
 # Global instances
-fetcher: Optional[GooglebotFetcher] = None
+fetcher: Optional[SmartFetcher] = None
 dataforseo: Optional[DataForSEOClient] = None
 google_cache: Optional[GoogleCacheFetcher] = None
 
@@ -37,7 +37,7 @@ google_cache: Optional[GoogleCacheFetcher] = None
 async def lifespan(app: FastAPI):
     """Manage fetcher lifecycle"""
     global fetcher, dataforseo, google_cache
-    fetcher = GooglebotFetcher()
+    fetcher = SmartFetcher()
     await fetcher.start()
 
     # Initialize DataForSEO if configured
@@ -97,6 +97,9 @@ class AnalyzeResponse(BaseModel):
     html: Optional[str] = None
     error: Optional[str] = None
     fetch_time_ms: int = 0
+    # Fetch strategy info
+    strategy: Optional[str] = None
+    warning: Optional[str] = None
     # Google Cache indexed data
     site_indexed: bool = False
     indexed_title: Optional[str] = None
@@ -171,6 +174,9 @@ async def analyze_url(request: AnalyzeRequest):
             status_code=result.get("status_code", 200),
             html=result["html"],
             fetch_time_ms=result.get("fetch_time_ms", 0),
+            # Fetch strategy info
+            strategy=result.get("strategy"),
+            warning=result.get("warning"),
             # Google Cache indexed data (primary)
             site_indexed=site_indexed,
             indexed_title=cache_data.get("indexed_title"),
