@@ -446,7 +446,9 @@ body {
 .meta-tags {
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
     gap: 10px;
+    margin-top: 32px;
     margin-bottom: 28px;
 }
 
