@@ -20,7 +20,7 @@ class FlareSolverrClient:
     https://github.com/FlareSolverr/FlareSolverr
     """
 
-    def __init__(self, base_url: str = None, timeout: int = 60):
+    def __init__(self, base_url: str = None, timeout: int = 120):
         self.base_url = base_url or FLARESOLVERR_URL
         self.timeout = timeout
         self.client: Optional[httpx.AsyncClient] = None

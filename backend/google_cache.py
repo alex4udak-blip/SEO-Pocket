@@ -53,6 +53,8 @@ class GoogleCacheFetcher:
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self._blocked = False  # Track if we're blocked by Google
+        self._blocked_time = 0  # When we got blocked
+        self._block_cooldown = 300  # 5 minutes cooldown after block
         self._cache: dict = {}  # Simple in-memory cache
         self._cache_ttl = 3600  # 1 hour cache
 
@@ -120,10 +122,14 @@ class GoogleCacheFetcher:
         if cached:
             return cached
 
-        # If we're blocked, skip Google Cache requests
+        # If we're blocked, check if cooldown expired
         if self._blocked:
-            logger.warning("Skipping Google Cache - currently blocked")
-            return {"success": False, "error": "Rate limited by Google", "blocked": True}
+            if time.time() - self._blocked_time > self._block_cooldown:
+                logger.info("Block cooldown expired, retrying Google Cache")
+                self._blocked = False
+            else:
+                logger.warning("Skipping Google Cache - currently blocked")
+                return {"success": False, "error": "Rate limited by Google", "blocked": True}
 
         if not self.context:
             return {"success": False, "error": "Browser not initialized"}
@@ -162,6 +168,7 @@ class GoogleCacheFetcher:
                 if self._is_blocked(html):
                     logger.warning("Blocked by Google - rate limited")
                     self._blocked = True
+                    self._blocked_time = time.time()
                     result["error"] = "Rate limited by Google"
                     result["blocked"] = True
                 # Check if we got actual content (not Google error page)
