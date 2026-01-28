@@ -26,3 +26,5 @@ Thumbs.db
 
 # Node (if any)
 node_modules/
+credentials/
+*-sa.json

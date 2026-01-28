@@ -1,12 +1,13 @@
 /**
  * SEO Pocket App
- * Premium UI inspired by Gemini, Claude, NotebookLM
+ * Premium UI inspired by Gemini, Claude, NotebookLM, affiliate.fm
  */
 
 class SEOPocketApp {
     constructor() {
         this.api = '/api/analyze';
         this.currentData = null;
+        this.botOnlyVisible = false;
 
         this.elements = {
             urlInput: document.getElementById('url-input'),
@@ -26,12 +27,45 @@ class SEOPocketApp {
             indexedSection: document.getElementById('google-indexed-section'),
             indexedTitleContent: document.getElementById('indexed-title-content'),
             indexedDescriptionContent: document.getElementById('indexed-description-content'),
+
+            // New buttons in search bar
             sourceBtn: document.getElementById('source-btn'),
+            shareBtn: document.getElementById('share-btn'),
+            botOnlyBtn: document.getElementById('bot-only-btn'),
+            botOnlyCount: document.getElementById('bot-only-count'),
+
+            // Preview buttons
+            previewSourceBtn: document.getElementById('preview-source-btn'),
             copyBtn: document.getElementById('copy-btn'),
+
+            // Modal
             modalOverlay: document.getElementById('modal-overlay'),
             modalClose: document.getElementById('modal-close'),
             sourceCode: document.getElementById('source-code'),
-            chips: document.querySelectorAll('.chip'),
+
+            // Info chips (affiliate.fm style)
+            infoChips: document.getElementById('info-chips'),
+            chipGoogleCanonical: document.getElementById('chip-google-canonical'),
+            googleCanonicalValue: document.getElementById('google-canonical-value'),
+            chipFirstIndexed: document.getElementById('chip-first-indexed'),
+            firstIndexedValue: document.getElementById('first-indexed-value'),
+            chipPublished: document.getElementById('chip-published'),
+            publishedValue: document.getElementById('published-value'),
+            chipHtmlLang: document.getElementById('chip-html-lang'),
+            htmlLangValue: document.getElementById('html-lang-value'),
+            chipRedirects: document.getElementById('chip-redirects'),
+            redirectsValue: document.getElementById('redirects-value'),
+            chipFetchTime: document.getElementById('chip-fetch-time'),
+            fetchTimeValue: document.getElementById('fetch-time-value'),
+            chipStrategy: document.getElementById('chip-strategy'),
+            strategyValue: document.getElementById('strategy-value'),
+
+            // Bot Only section
+            botOnlySection: document.getElementById('bot-only-section'),
+            botOnlyCountHeader: document.getElementById('bot-only-count-header'),
+            botOnlyElements: document.getElementById('bot-only-elements'),
+
+            chips: document.querySelectorAll('.quick-actions .chip'),
         };
 
         this.init();
@@ -70,15 +104,24 @@ class SEOPocketApp {
             });
         });
 
-        // Source code button
-        this.elements.sourceBtn.addEventListener('click', () => this.showSourceCode());
+        // Source code button (in search bar)
+        this.elements.sourceBtn?.addEventListener('click', () => this.showSourceCode());
+
+        // Preview source button
+        this.elements.previewSourceBtn?.addEventListener('click', () => this.showSourceCode());
+
+        // Share button
+        this.elements.shareBtn?.addEventListener('click', () => this.shareUrl());
+
+        // Bot Only toggle
+        this.elements.botOnlyBtn?.addEventListener('click', () => this.toggleBotOnly());
 
         // Copy button
-        this.elements.copyBtn.addEventListener('click', () => this.copyToClipboard());
+        this.elements.copyBtn?.addEventListener('click', () => this.copyToClipboard());
 
         // Modal
-        this.elements.modalClose.addEventListener('click', () => this.hideModal());
-        this.elements.modalOverlay.addEventListener('click', (e) => {
+        this.elements.modalClose?.addEventListener('click', () => this.hideModal());
+        this.elements.modalOverlay?.addEventListener('click', (e) => {
             if (e.target === this.elements.modalOverlay) this.hideModal();
         });
         document.addEventListener('keydown', (e) => {
@@ -111,6 +154,7 @@ class SEOPocketApp {
         this.setLoading(true);
         this.hideError();
         this.hideResults();
+        this.disableActionButtons();
 
         try {
             const response = await fetch(this.api, {
@@ -127,6 +171,7 @@ class SEOPocketApp {
 
             this.currentData = data;
             this.renderResults(data);
+            this.enableActionButtons();
 
             // Update URL
             const newUrl = new URL(window.location);
@@ -142,26 +187,33 @@ class SEOPocketApp {
     }
 
     renderResults(data) {
+        // Render new affiliate.fm style info chips
+        this.renderInfoChips(data);
+
+        // Render legacy meta tags (for backward compatibility)
         this.renderMetaTags(data);
 
         // Google indexed data
         this.renderGoogleIndexedData(data);
 
-        // Live fetch data
-        this.elements.titleCard.textContent = data.title || 'Not found';
-        this.elements.h1Card.textContent = data.h1 || 'Not found';
-        this.elements.descriptionCard.textContent = data.description || 'Not found';
+        // Bot Only section
+        this.renderBotOnlySection(data);
 
-        if (data.html) {
-            // Add base tag to resolve relative URLs (images, CSS, etc.)
-            let htmlWithBase = data.html;
-            const baseUrl = data.url || data.canonical;
+        // Live fetch data
+        const seoData = data.seo_data || data;
+        this.elements.titleCard.textContent = seoData.title || data.title || 'Not found';
+        this.elements.h1Card.textContent = seoData.h1 || data.h1 || 'Not found';
+        this.elements.descriptionCard.textContent = seoData.description || data.description || 'Not found';
+
+        // Preview iframe
+        const html = data.html;
+        if (html) {
+            let htmlWithBase = html;
+            const baseUrl = data.final_url || data.url || seoData.canonical || data.canonical;
             if (baseUrl) {
-                // Extract origin from URL
                 try {
                     const urlObj = new URL(baseUrl);
                     const baseTag = `<base href="${urlObj.origin}/">`;
-                    // Insert base tag after <head> or at beginning
                     if (htmlWithBase.includes('<head>')) {
                         htmlWithBase = htmlWithBase.replace('<head>', `<head>${baseTag}`);
                     } else if (htmlWithBase.includes('<head ')) {
@@ -177,8 +229,148 @@ class SEOPocketApp {
             this.elements.previewFrame.src = URL.createObjectURL(blob);
         }
 
-        this.renderHreflang(data.hreflang || []);
+        // Hreflang
+        const hreflang = seoData.hreflang || data.hreflang || [];
+        this.renderHreflang(hreflang);
+
         this.showResults();
+    }
+
+    renderInfoChips(data) {
+        const seoData = data.seo_data || {};
+
+        // Google Canonical
+        const googleCanonical = data.google_canonical;
+        if (googleCanonical) {
+            this.elements.chipGoogleCanonical.style.display = 'flex';
+            // Extract hostname for display
+            try {
+                const canonicalUrl = new URL(googleCanonical);
+                this.elements.googleCanonicalValue.textContent = canonicalUrl.hostname;
+                this.elements.googleCanonicalValue.title = googleCanonical;
+            } catch {
+                this.elements.googleCanonicalValue.textContent = googleCanonical;
+            }
+        } else {
+            this.elements.chipGoogleCanonical.style.display = 'none';
+        }
+
+        // First Indexed Date
+        const firstIndexed = data.first_indexed;
+        if (firstIndexed) {
+            this.elements.chipFirstIndexed.style.display = 'flex';
+            this.elements.firstIndexedValue.textContent = firstIndexed;
+        } else {
+            this.elements.chipFirstIndexed.style.display = 'none';
+        }
+
+        // Published Date
+        const published = data.published;
+        if (published) {
+            this.elements.chipPublished.style.display = 'flex';
+            this.elements.publishedValue.textContent = published;
+        } else {
+            this.elements.chipPublished.style.display = 'none';
+        }
+
+        // HTML Lang
+        const htmlLang = seoData.html_lang || data.html_lang;
+        if (htmlLang) {
+            this.elements.chipHtmlLang.style.display = 'flex';
+            this.elements.htmlLangValue.textContent = htmlLang;
+        } else {
+            this.elements.chipHtmlLang.style.display = 'none';
+        }
+
+        // Redirects
+        const redirects = data.redirects;
+        if (redirects && redirects.length > 0) {
+            this.elements.chipRedirects.style.display = 'flex';
+            // Show redirect chain
+            const redirectChain = redirects.join(' -> ');
+            this.elements.redirectsValue.textContent = redirectChain;
+            this.elements.redirectsValue.title = redirectChain;
+        } else if (data.url !== data.final_url && data.final_url) {
+            // Show if URL changed (redirect happened)
+            this.elements.chipRedirects.style.display = 'flex';
+            try {
+                const from = new URL(data.url).hostname;
+                const to = new URL(data.final_url).hostname;
+                if (from !== to) {
+                    this.elements.redirectsValue.textContent = `${from} -> ${to}`;
+                } else {
+                    this.elements.redirectsValue.textContent = 'Redirect detected';
+                }
+            } catch {
+                this.elements.redirectsValue.textContent = 'Redirect detected';
+            }
+        } else {
+            this.elements.chipRedirects.style.display = 'none';
+        }
+
+        // Fetch Time
+        const fetchTime = data.fetch_time_ms;
+        if (fetchTime) {
+            this.elements.chipFetchTime.style.display = 'flex';
+            this.elements.fetchTimeValue.textContent = `${fetchTime}ms`;
+        } else {
+            this.elements.chipFetchTime.style.display = 'none';
+        }
+
+        // Strategy
+        const strategy = data.strategy;
+        if (strategy) {
+            this.elements.chipStrategy.style.display = 'flex';
+            this.elements.strategyValue.textContent = strategy.replace(/_/g, ' ');
+        } else {
+            this.elements.chipStrategy.style.display = 'none';
+        }
+    }
+
+    renderBotOnlySection(data) {
+        const cloaking = data.cloaking;
+
+        if (cloaking && cloaking.detected && cloaking.bot_only_lines > 0) {
+            // Update button badge
+            this.elements.botOnlyCount.style.display = 'inline';
+            this.elements.botOnlyCount.textContent = cloaking.bot_only_lines;
+
+            // Update header badge
+            this.elements.botOnlyCountHeader.textContent = `${cloaking.bot_only_lines} elements`;
+
+            // Render bot-only elements
+            const elements = cloaking.bot_only_elements || [];
+            if (elements.length > 0) {
+                const formattedElements = elements.map(el =>
+                    `<span class="bot-line">${this.escapeHtml(el)}</span>`
+                ).join('\n');
+                this.elements.botOnlyElements.innerHTML = formattedElements;
+            } else {
+                this.elements.botOnlyElements.textContent = `${cloaking.bot_only_lines} bot-only elements detected`;
+            }
+
+            // Show section if toggle is active
+            if (this.botOnlyVisible) {
+                this.elements.botOnlySection.style.display = 'block';
+            }
+        } else {
+            this.elements.botOnlyCount.style.display = 'none';
+            this.elements.botOnlySection.style.display = 'none';
+            this.botOnlyVisible = false;
+            this.elements.botOnlyBtn?.classList.remove('active');
+        }
+    }
+
+    toggleBotOnly() {
+        this.botOnlyVisible = !this.botOnlyVisible;
+
+        if (this.botOnlyVisible) {
+            this.elements.botOnlyBtn?.classList.add('active');
+            this.elements.botOnlySection.style.display = 'block';
+        } else {
+            this.elements.botOnlyBtn?.classList.remove('active');
+            this.elements.botOnlySection.style.display = 'none';
+        }
     }
 
     renderGoogleIndexedData(data) {
@@ -205,35 +397,32 @@ class SEOPocketApp {
 
     renderMetaTags(data) {
         const tags = [];
+        const seoData = data.seo_data || {};
 
         // DataForSEO indexed data (priority - show first)
         if (data.site_indexed) {
-            tags.push({ label: 'Google Index', value: '✓ Indexed', class: 'indexed' });
+            tags.push({ label: 'Google Index', value: 'Indexed', class: 'indexed' });
         }
         if (data.serp_position) {
             tags.push({ label: 'SERP Position', value: `#${data.serp_position}`, class: 'serp-position' });
         }
 
-        // Google indexed canonical (from DataForSEO - what Google actually sees)
-        if (data.google_canonical) {
-            tags.push({ label: 'Google Canonical', value: data.google_canonical, class: 'google-canonical' });
+        // Live canonical (from page)
+        const canonical = seoData.canonical || data.canonical;
+        if (canonical) {
+            tags.push({ label: 'Live Canonical', value: canonical, class: 'canonical' });
         }
 
-        // Live fetch data
-        if (data.html_lang) {
-            tags.push({ label: 'Lang', value: data.html_lang, class: 'lang' });
+        // Robots
+        const robots = seoData.robots || data.robots;
+        if (robots) {
+            tags.push({ label: 'Robots', value: robots, class: 'robots' });
         }
-        if (data.canonical) {
-            tags.push({ label: 'Live Canonical', value: data.canonical, class: 'canonical' });
-        }
-        if (data.robots) {
-            tags.push({ label: 'Robots', value: data.robots, class: 'robots' });
-        }
-        if (data.title) {
-            tags.push({ label: 'Title', value: `${data.title.length} chars`, class: 'title' });
-        }
-        if (data.fetch_time_ms) {
-            tags.push({ label: 'Time', value: `${data.fetch_time_ms}ms`, class: '' });
+
+        // Title length
+        const title = seoData.title || data.title;
+        if (title) {
+            tags.push({ label: 'Title', value: `${title.length} chars`, class: 'title' });
         }
 
         this.elements.metaTags.innerHTML = tags.map(tag => `
@@ -245,7 +434,7 @@ class SEOPocketApp {
     }
 
     renderHreflang(hreflang) {
-        if (hreflang.length === 0) {
+        if (!hreflang || hreflang.length === 0) {
             this.elements.hreflangCard.classList.remove('visible');
             return;
         }
@@ -276,6 +465,42 @@ class SEOPocketApp {
             .join('\n');
     }
 
+    async shareUrl() {
+        const currentUrl = window.location.href;
+
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: 'SEO Pocket Analysis',
+                    url: currentUrl
+                });
+            } catch (err) {
+                // User cancelled or share failed
+                this.copyShareUrl(currentUrl);
+            }
+        } else {
+            this.copyShareUrl(currentUrl);
+        }
+    }
+
+    async copyShareUrl(url) {
+        try {
+            await navigator.clipboard.writeText(url);
+
+            const btn = this.elements.shareBtn;
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span class="btn-label">Copied!</span>
+            `;
+            setTimeout(() => btn.innerHTML = originalHTML, 2000);
+        } catch (err) {
+            console.error('Copy failed:', err);
+        }
+    }
+
     async copyToClipboard() {
         if (!this.currentData?.html) return;
 
@@ -302,12 +527,28 @@ class SEOPocketApp {
         this.elements.btnSpinner.style.display = loading ? 'block' : 'none';
     }
 
+    enableActionButtons() {
+        this.elements.sourceBtn && (this.elements.sourceBtn.disabled = false);
+        this.elements.shareBtn && (this.elements.shareBtn.disabled = false);
+        this.elements.botOnlyBtn && (this.elements.botOnlyBtn.disabled = false);
+    }
+
+    disableActionButtons() {
+        this.elements.sourceBtn && (this.elements.sourceBtn.disabled = true);
+        this.elements.shareBtn && (this.elements.shareBtn.disabled = true);
+        this.elements.botOnlyBtn && (this.elements.botOnlyBtn.disabled = true);
+    }
+
     showResults() {
         this.elements.resultsContainer.classList.add('visible');
     }
 
     hideResults() {
         this.elements.resultsContainer.classList.remove('visible');
+        // Reset bot only section
+        this.elements.botOnlySection.style.display = 'none';
+        this.botOnlyVisible = false;
+        this.elements.botOnlyBtn?.classList.remove('active');
     }
 
     showError(message) {
@@ -330,6 +571,7 @@ class SEOPocketApp {
     }
 
     escapeHtml(text) {
+        if (!text) return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
