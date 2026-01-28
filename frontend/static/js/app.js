@@ -214,28 +214,30 @@ class SEOPocketApp {
         this.elements.h1Card.textContent = seoData.h1 || data.h1 || 'Not found';
         this.elements.descriptionCard.textContent = seoData.description || data.description || 'Not found';
 
-        // Preview iframe
-        const html = data.html;
-        if (html) {
-            let htmlWithBase = html;
-            const baseUrl = data.final_url || data.url || seoData.canonical || data.canonical;
-            if (baseUrl) {
-                try {
-                    const urlObj = new URL(baseUrl);
-                    const baseTag = `<base href="${urlObj.origin}/">`;
-                    if (htmlWithBase.includes('<head>')) {
-                        htmlWithBase = htmlWithBase.replace('<head>', `<head>${baseTag}`);
-                    } else if (htmlWithBase.includes('<head ')) {
-                        htmlWithBase = htmlWithBase.replace(/<head[^>]*>/, `$&${baseTag}`);
-                    } else {
-                        htmlWithBase = baseTag + htmlWithBase;
-                    }
-                } catch (e) {
-                    console.warn('Failed to create base URL:', e);
+        // Preview iframe - inject base tag and use srcdoc for proper rendering
+        const analyzedUrl = data.url;
+        if (analyzedUrl && data.html) {
+            // Inject base tag into HTML for relative URLs to work
+            let htmlWithBase = data.html;
+            const baseUrl = data.final_url || analyzedUrl;
+            try {
+                const urlObj = new URL(baseUrl);
+                const baseTag = `<base href="${urlObj.origin}/" target="_blank">`;
+                if (htmlWithBase.includes('<head>')) {
+                    htmlWithBase = htmlWithBase.replace('<head>', `<head>${baseTag}`);
+                } else if (htmlWithBase.includes('<head ')) {
+                    htmlWithBase = htmlWithBase.replace(/<head[^>]*>/, `$&${baseTag}`);
+                } else if (htmlWithBase.includes('<html')) {
+                    htmlWithBase = htmlWithBase.replace(/<html[^>]*>/, `$&<head>${baseTag}</head>`);
+                } else {
+                    htmlWithBase = `<!DOCTYPE html><html><head>${baseTag}</head><body>` + htmlWithBase + `</body></html>`;
                 }
+            } catch (e) {
+                console.warn('Failed to create base URL:', e);
             }
-            const blob = new Blob([htmlWithBase], { type: 'text/html' });
-            this.elements.previewFrame.src = URL.createObjectURL(blob);
+
+            // Use srcdoc for inline HTML - allows external resources to load
+            this.elements.previewFrame.srcdoc = htmlWithBase;
         }
 
         // Hreflang
