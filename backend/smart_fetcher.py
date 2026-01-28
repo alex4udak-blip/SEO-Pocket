@@ -11,6 +11,7 @@ from typing import Optional, List
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 from flaresolverr_client import FlareSolverrClient
+from google_translate_fetcher import GoogleTranslateFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +62,14 @@ class SmartFetcher:
         self.browser: Optional[Browser] = None
         self.flaresolverr: Optional[FlareSolverrClient] = None
         self.flaresolverr_available: bool = False
+        # Google Translate proxy (THE LOOPHOLE!)
+        self.google_translate: Optional[GoogleTranslateFetcher] = None
         # Czech proxy fallback (format: http://user:pass@host:port)
         import os
         self.proxy_url = proxy_url or os.getenv("PROXY_URL")
 
     async def start(self):
-        """Initialize browser and FlareSolverr"""
+        """Initialize browser, Google Translate proxy, and FlareSolverr"""
         self.playwright = await async_playwright().start()
         self.browser = await self.playwright.chromium.launch(
             headless=True,
@@ -79,6 +82,11 @@ class SmartFetcher:
                 '--window-size=1920,1080',
             ]
         )
+
+        # Initialize Google Translate proxy (THE LOOPHOLE!)
+        self.google_translate = GoogleTranslateFetcher(timeout=30)
+        await self.google_translate.start()
+        logger.info("Google Translate proxy initialized - this is the loophole!")
 
         # Initialize FlareSolverr client
         self.flaresolverr = FlareSolverrClient()
@@ -97,6 +105,8 @@ class SmartFetcher:
             await self.playwright.stop()
         if self.flaresolverr:
             await self.flaresolverr.stop()
+        if self.google_translate:
+            await self.google_translate.stop()
 
     def _is_cloudflare(self, html: str) -> bool:
         """Check if Cloudflare challenge"""
@@ -279,9 +289,10 @@ class SmartFetcher:
             if context:
                 await context.close()
 
-    async def fetch(self, url: str) -> dict:
+    async def fetch(self, url: str, skip_google_translate: bool = False) -> dict:
         """
         Smart fetch - tries multiple strategies in order:
+        0. Google Translate proxy (THE LOOPHOLE! - works on most blocked sites)
         1. Googlebot UA direct (fastest, works for non-protected sites)
         2. Googlebot UA with stealth (for light Cloudflare)
         3. FlareSolverr with Googlebot UA (for heavy Cloudflare)
@@ -291,6 +302,20 @@ class SmartFetcher:
             return {"success": False, "error": "Browser not initialized"}
 
         start_time = time.time()
+
+        # Strategy 0: Google Translate proxy (THE LOOPHOLE!)
+        # This works on Wikipedia, ProductHunt, and most sites that block scrapers
+        if not skip_google_translate and self.google_translate:
+            logger.info(f"[Strategy 0] Trying Google Translate proxy for {url}")
+            result = await self.google_translate.fetch(url)
+
+            if result.get("success"):
+                html = result.get("html", "")
+                if not self._is_cloudflare(html) and len(html) > 500:
+                    result["strategy"] = "google_translate"
+                    result["seo_data"] = self._extract_seo_data(html)
+                    logger.info(f"[Strategy 0] SUCCESS via Google Translate for {url}")
+                    return result
 
         # Strategy 1: Direct Googlebot UA (fastest)
         logger.info(f"[Strategy 1] Trying direct Googlebot UA for {url}")

@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # Zyte API (for Cloudflare bypass)
     zyte_api_key: Optional[str] = None
 
+    # Affiliate.fm API (for REAL Googlebot view - cloaked content!)
+    # Token from Telegram auth, stored in localStorage.tg_auth in browser
+    affiliate_fm_token: Optional[str] = None
+
     # Redis (optional cache)
     redis_url: Optional[str] = None
 

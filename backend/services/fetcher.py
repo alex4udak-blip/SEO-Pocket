@@ -3,12 +3,14 @@ Smart Fetcher Service.
 Multi-strategy approach to fetch pages as Googlebot sees them.
 
 Strategies (in order):
-0. Google Translate proxy (THE LOOPHOLE! - works on most blocked sites)
-1. Zyte API (for Cloudflare-protected sites - like affiliate.fm uses!)
-2. Direct Googlebot UA (fastest, works for non-protected sites)
-3. Stealth Googlebot UA (for light Cloudflare)
-4. FlareSolverr (for heavy Cloudflare protection)
-5. Proxy fallback (last resort)
+0. Affiliate.fm API (BEST! Uses google-proxy IPs = REAL cloaked content!)
+1. Google Translate proxy (fast, Google IP, free - but user content)
+2. Rich Results Test (REAL Googlebot view - requires auth)
+3. Zyte API (for Cloudflare bypass - user content only)
+4. Direct Googlebot UA (fastest, works for non-protected sites)
+5. Stealth Googlebot UA (for light Cloudflare)
+6. FlareSolverr (for heavy Cloudflare protection)
+7. Proxy fallback (last resort)
 """
 
 import asyncio
@@ -46,12 +48,13 @@ class SmartFetcher:
     Smart fetcher that tries multiple strategies to fetch pages as Googlebot.
 
     Strategies:
-    0. Google Translate proxy (THE LOOPHOLE!)
-    1. Zyte API (for Cloudflare bypass - same as affiliate.fm)
-    2. Direct Googlebot UA
-    3. Stealth Googlebot UA
-    4. FlareSolverr
-    5. Proxy fallback
+    0. Affiliate.fm API (BEST! google-proxy IPs = cloaked content!)
+    1. Google Translate proxy (THE LOOPHOLE! - but user content)
+    2. Zyte API (for Cloudflare bypass - user content)
+    3. Direct Googlebot UA
+    4. Stealth Googlebot UA
+    5. FlareSolverr
+    6. Proxy fallback
     """
 
     # User Agents
@@ -115,6 +118,10 @@ class SmartFetcher:
         self.zyte_client = None
         self.zyte_available: bool = False
 
+        # Affiliate.fm client (BEST! google-proxy IPs = cloaked content)
+        self.affiliate_fm_client = None
+        self.affiliate_fm_available: bool = False
+
     async def start(self) -> None:
         """Initialize browser and HTTP clients."""
         # Initialize aiohttp session for Google Translate
@@ -170,6 +177,28 @@ class SmartFetcher:
         else:
             logger.info("Zyte API not configured (no ZYTE_API_KEY)")
 
+        # Initialize Affiliate.fm client (BEST! google-proxy IPs = cloaked content)
+        from services.affiliate_fm import AffiliateFmClient
+        self.affiliate_fm_client = AffiliateFmClient()
+        if self.affiliate_fm_client.is_configured():
+            await self.affiliate_fm_client.start()
+            self.affiliate_fm_available = True
+            logger.info("Affiliate.fm client initialized (google-proxy IPs!)")
+        else:
+            logger.info("Affiliate.fm not configured (no AFFILIATE_FM_TOKEN)")
+
+        # Initialize Rich Results Test parser
+        self.rich_results_parser = None
+        self.rich_results_available = False
+        try:
+            from services.rich_results import RichResultsParser
+            self.rich_results_parser = RichResultsParser()
+            self.rich_results_available = await self.rich_results_parser.start()
+            if self.rich_results_available:
+                logger.info("Rich Results Test parser initialized")
+        except Exception as e:
+            logger.warning(f"Rich Results parser not available: {e}")
+
         logger.info("SmartFetcher initialized")
 
     async def stop(self) -> None:
@@ -184,6 +213,10 @@ class SmartFetcher:
             await self.flaresolverr_client.aclose()
         if self.zyte_client:
             await self.zyte_client.stop()
+        if self.affiliate_fm_client:
+            await self.affiliate_fm_client.stop()
+        if self.rich_results_parser:
+            await self.rich_results_parser.stop()
 
     def _is_cloudflare(self, html: str) -> bool:
         """Check if response is Cloudflare challenge page."""
@@ -220,9 +253,35 @@ class SmartFetcher:
 
         return False
 
-    def _build_translate_url(self, target_url: str, method: str = "website") -> str:
-        """Build Google Translate proxy URL with cache-busting."""
-        # Add cache-busting parameter to target URL
+    def _build_translate_url(self, target_url: str, method: str = "translate_goog") -> str:
+        """
+        Build Google Translate proxy URL.
+
+        Methods:
+        - translate_goog: NEW! Uses {domain}.translate.goog format (CLOAKED CONTENT!)
+        - website: Old translate.google.com/website format
+        - translate: Old translate.google.com/translate format
+        """
+        from urllib.parse import urlparse
+
+        parsed = urlparse(target_url)
+
+        if method == "translate_goog":
+            # NEW METHOD! This gives us google-proxy IPs and CLOAKED content!
+            # Format: https://{domain-with-dashes}.translate.goog/{path}?_x_tr_sl=auto&_x_tr_tl=en&_x_tr_hl=en
+            domain_with_dashes = parsed.netloc.replace(".", "-")
+            path = parsed.path or "/"
+
+            # Build query params
+            translate_params = "_x_tr_sl=auto&_x_tr_tl=en&_x_tr_hl=en"
+            if parsed.query:
+                query = f"{translate_params}&{parsed.query}"
+            else:
+                query = translate_params
+
+            return f"https://{domain_with_dashes}.translate.goog{path}?{query}"
+
+        # Old methods (fallback)
         cache_buster = f"_cb={int(time.time())}{random.randint(1000,9999)}"
         if "?" in target_url:
             busted_url = f"{target_url}&{cache_buster}"
@@ -247,14 +306,58 @@ class SmartFetcher:
 
     def _clean_translated_html(self, html: str, original_url: str) -> str:
         """Clean Google Translate wrapper from HTML."""
-        # Remove Google Translate toolbar/frame
+        from urllib.parse import urlparse
+        parsed = urlparse(original_url)
+        original_domain = parsed.netloc
+        domain_with_dashes = original_domain.replace(".", "-")
+
+        # Remove Google Translate scripts (gstatic)
+        html = re.sub(
+            r'<script[^>]*src="[^"]*gstatic\.com/_/translate_http/[^"]*"[^>]*></script>',
+            '', html, flags=re.IGNORECASE
+        )
+        html = re.sub(
+            r'<link[^>]*href="[^"]*gstatic\.com/_/translate_http/[^"]*"[^>]*>',
+            '', html, flags=re.IGNORECASE
+        )
+
+        # Remove Google Translate meta tags
+        html = re.sub(r'<meta http-equiv="X-Translated-By"[^>]*>', '', html, flags=re.IGNORECASE)
+        html = re.sub(r'<meta http-equiv="X-Translated-To"[^>]*>', '', html, flags=re.IGNORECASE)
+        html = re.sub(r'<meta name="robots" content="none">', '', html, flags=re.IGNORECASE)
+
+        # Remove Google fonts for translate UI
+        html = re.sub(
+            r'<link[^>]*href="[^"]*fonts\.googleapis\.com[^"]*"[^>]*>',
+            '', html, flags=re.IGNORECASE
+        )
+
+        # Remove inline translate scripts
+        html = re.sub(
+            r'<script[^>]*>.*?gtElInit.*?</script>',
+            '', html, flags=re.DOTALL | re.IGNORECASE
+        )
+        html = re.sub(
+            r'<script id="google-translate-element-script"[^>]*>.*?</script>',
+            '', html, flags=re.DOTALL | re.IGNORECASE
+        )
+
+        # Old toolbar removal
         html = re.sub(r'<div[^>]*id="gt-nvframe"[^>]*>.*?</div>', '', html, flags=re.DOTALL)
         html = re.sub(r'<div[^>]*class="[^"]*goog-te-[^"]*"[^>]*>.*?</div>', '', html, flags=re.DOTALL)
-
-        # Remove Google Translate scripts
         html = re.sub(r'<script[^>]*translate\.google[^>]*>.*?</script>', '', html, flags=re.DOTALL)
 
-        # Fix translated URLs
+        # Rewrite translate.goog links back to original domain
+        html = re.sub(
+            rf'(href|src)="https://{domain_with_dashes}\.translate\.goog([^"]*)\?[^"]*_x_tr[^"]*"',
+            rf'\1="https://{original_domain}\2"',
+            html
+        )
+
+        # Replace inline domain references
+        html = html.replace(f"{domain_with_dashes}.translate.goog", original_domain)
+
+        # Fix old translate URLs
         html = re.sub(
             r'https?://translate\.googleusercontent\.com/translate_c\?[^"\']*u=([^"\'&]+)',
             lambda m: m.group(1),
@@ -266,21 +369,33 @@ class SmartFetcher:
     async def _fetch_google_translate(self, url: str) -> dict:
         """
         Strategy 0: Fetch via Google Translate proxy.
-        THE LOOPHOLE! Works on most blocked sites.
+
+        Uses {domain}.translate.goog format which gives us:
+        - IP: 74.125.x.x or 66.249.x.x (google-proxy!)
+        - rDNS: google-proxy-*.google.com
+        - Sites trust this as Google traffic → return CLOAKED content!
+
+        This is the SAME method affiliate.fm uses!
         """
         if not self.aiohttp_session:
             return {"success": False, "error": "Session not initialized"}
 
         start_time = time.time()
 
-        for method in ["website", "translate"]:
+        # Try methods in order: NEW translate.goog first, then old fallbacks
+        for method in ["translate_goog", "website", "translate"]:
             try:
                 proxy_url = self._build_translate_url(url, method)
-                logger.debug(f"[GoogleTranslate] Trying {method} method")
+                logger.debug(f"[GoogleTranslate] Trying {method} method: {proxy_url[:100]}...")
 
                 async with self.aiohttp_session.get(proxy_url) as response:
                     if response.status == 200:
                         html = await response.text()
+
+                        # Check for Google Translate error page
+                        if "Can't reach this website" in html or "Can&#39;t reach this website" in html:
+                            logger.warning(f"[GoogleTranslate] {method} - can't reach website")
+                            continue
 
                         # Check for Cloudflare challenge
                         if self._is_cloudflare(html):
@@ -289,13 +404,18 @@ class SmartFetcher:
 
                         if len(html) > 1000 and "<html" in html.lower():
                             cleaned_html = self._clean_translated_html(html, url)
+
+                            # Mark if this is cloaked content (translate.goog method)
+                            is_cloaked = method == "translate_goog"
+
                             return {
                                 "success": True,
                                 "html": cleaned_html,
                                 "status_code": 200,
                                 "final_url": url,
                                 "fetch_time_ms": int((time.time() - start_time) * 1000),
-                                "strategy": "google_translate",
+                                "strategy": f"google_translate_{method}",
+                                "is_cloaked": is_cloaked,
                             }
 
             except asyncio.TimeoutError:
@@ -480,46 +600,60 @@ class SmartFetcher:
                 else:
                     logger.info(f"[Strategy 0] Google Translate returned blocked/403, trying next strategy")
 
-        # Strategy 1: Zyte API (for Cloudflare bypass - same as affiliate.fm!)
+        # Strategy 1: Rich Results Test (DISABLED - requires Google auth)
+        # TODO: Fix authentication to enable real Googlebot view
+        # if self.rich_results_available:
+        #     logger.info(f"[Strategy 1] Trying Rich Results Test for {url}")
+        #     result = await self.rich_results_parser.fetch_googlebot_html(url)
+        #     if result.get("success"):
+        #         html = result.get("html", "")
+        #         if len(html) > 500:
+        #             logger.info(f"[Strategy 1] SUCCESS via Rich Results Test (real Googlebot!)")
+        #             result["final_url"] = url
+        #             result["is_real_googlebot"] = True
+        #             return result
+
+        # Strategy 2: Zyte API (for Cloudflare bypass - user content only)
         if self.zyte_available:
-            logger.info(f"[Strategy 1] Trying Zyte API for {url}")
+            logger.info(f"[Strategy 2] Trying Zyte API for {url}")
             result = await self.zyte_client.fetch_html(url)
 
             if result.get("success"):
                 html = result.get("html", "")
                 if not self._is_cloudflare(html) and len(html) > 500:
-                    logger.info(f"[Strategy 1] SUCCESS via Zyte API")
+                    logger.info(f"[Strategy 2] SUCCESS via Zyte API (user content)")
                     result["final_url"] = result.get("url", url)
+                    result["is_real_googlebot"] = False  # Zyte gives user content, not bot
                     return result
 
-        # Strategy 2: Direct Googlebot UA
+        # Strategy 3: Direct Googlebot UA
         if self.browser:
-            logger.info(f"[Strategy 2] Trying direct Googlebot UA")
+            logger.info(f"[Strategy 3] Trying direct Googlebot UA")
             result = await self._fetch_with_ua(url, self.GOOGLEBOT_UA, use_stealth=False)
 
             if result.get("success") and not self._is_blocked_response(result):
                 result["strategy"] = "googlebot_direct"
                 return result
 
-            # Strategy 3: Googlebot UA with stealth
-            logger.info(f"[Strategy 3] Trying Googlebot UA with stealth")
+            # Strategy 4: Googlebot UA with stealth
+            logger.info(f"[Strategy 4] Trying Googlebot UA with stealth")
             result = await self._fetch_with_ua(url, self.GOOGLEBOT_UA, use_stealth=True)
 
             if result.get("success") and not self._is_blocked_response(result):
                 result["strategy"] = "googlebot_stealth"
                 return result
 
-        # Strategy 4: FlareSolverr
+        # Strategy 5: FlareSolverr
         if self.flaresolverr_available:
-            logger.info(f"[Strategy 4] Trying FlareSolverr")
+            logger.info(f"[Strategy 5] Trying FlareSolverr")
             result = await self._fetch_flaresolverr(url)
 
             if result.get("success") and not self._is_blocked_response(result):
                 return result
 
-        # Strategy 5: Proxy fallback
+        # Strategy 6: Proxy fallback
         if self.proxy_url and self.browser:
-            logger.info(f"[Strategy 5] Trying proxy fallback")
+            logger.info(f"[Strategy 6] Trying proxy fallback")
             result = await self._fetch_with_ua(
                 url, self.GOOGLEBOT_UA, use_stealth=True, use_proxy=True
             )
