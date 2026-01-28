@@ -123,33 +123,45 @@ class DataForSEOClient:
             )
 
             data = response.json()
+            logger.info(f"DataForSEO response status_code: {data.get('status_code')}")
 
             if data.get("status_code") == 20000:
                 tasks = data.get("tasks", [])
                 if tasks and tasks[0].get("result"):
                     serp_result = tasks[0]["result"][0]
                     items = serp_result.get("items", [])
+                    logger.info(f"DataForSEO found {len(items)} items for domain: {domain}")
+
+                    # Extract base domain for comparison (handle subdomains)
+                    domain_parts = domain.split('.')
+                    base_domain = '.'.join(domain_parts[-2:]) if len(domain_parts) > 2 else domain
+                    logger.info(f"Comparing with base_domain: {base_domain}")
 
                     # Find organic result matching our domain
                     for item in items:
                         if item.get("type") == "organic":
                             item_domain = item.get("domain", "")
                             item_url = item.get("url", "")
+                            logger.debug(f"Checking item: domain={item_domain}, url={item_url}")
 
-                            if domain in item_domain or domain in item_url:
+                            # Match if domain contains our domain OR base domain matches
+                            if domain in item_domain or domain in item_url or base_domain in item_domain:
                                 result["success"] = True
                                 result["indexed"] = True
                                 result["indexed_title"] = item.get("title")
                                 result["indexed_description"] = item.get("description")
                                 result["indexed_url"] = item_url
                                 result["serp_position"] = item.get("rank_absolute")
+                                logger.info(f"DataForSEO matched: indexed_url={item_url}")
                                 break
 
                     if not result["indexed"]:
                         result["success"] = True
                         result["indexed"] = False
+                        logger.info(f"DataForSEO: URL not found in SERP results")
             else:
                 result["error"] = data.get("status_message", "API error")
+                logger.warning(f"DataForSEO API error: {result['error']}")
 
         except Exception as e:
             logger.error(f"DataForSEO error: {e}")
