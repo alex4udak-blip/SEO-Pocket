@@ -234,6 +234,11 @@ class SmartFetcher:
                     if response.status == 200:
                         html = await response.text()
 
+                        # Check for Cloudflare challenge
+                        if self._is_cloudflare(html):
+                            logger.warning(f"[GoogleTranslate] {method} got Cloudflare challenge")
+                            continue
+
                         if len(html) > 1000 and "<html" in html.lower():
                             cleaned_html = self._clean_translated_html(html, url)
                             return {
