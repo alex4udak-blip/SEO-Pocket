@@ -172,6 +172,36 @@ class SmartFetcher:
         html_lower = html.lower()
         return any(ind in html_lower for ind in self.CLOUDFLARE_INDICATORS)
 
+    def _is_blocked_response(self, result: dict) -> bool:
+        """Check if response indicates we're blocked (Cloudflare, 403, etc)."""
+        html = result.get("html", "")
+        status_code = result.get("status_code", 200)
+
+        # Check for blocking status codes
+        if status_code in [403, 401, 503, 429]:
+            logger.warning(f"Blocked by status code: {status_code}")
+            return True
+
+        # Check for Cloudflare
+        if self._is_cloudflare(html):
+            logger.warning("Blocked by Cloudflare")
+            return True
+
+        # Check for common blocking page titles
+        html_lower = html.lower()
+        blocking_titles = [
+            "<title>403 forbidden</title>",
+            "<title>access denied</title>",
+            "<title>blocked</title>",
+            "<title>error</title>",
+            "<title>just a moment</title>",
+        ]
+        if any(title in html_lower for title in blocking_titles):
+            logger.warning("Blocked by error page title")
+            return True
+
+        return False
+
     def _build_translate_url(self, target_url: str, method: str = "website") -> str:
         """Build Google Translate proxy URL with cache-busting."""
         # Add cache-busting parameter to target URL
@@ -434,7 +464,7 @@ class SmartFetcher:
             logger.info(f"[Strategy 1] Trying direct Googlebot UA")
             result = await self._fetch_with_ua(url, self.GOOGLEBOT_UA, use_stealth=False)
 
-            if result.get("success") and not self._is_cloudflare(result.get("html", "")):
+            if result.get("success") and not self._is_blocked_response(result):
                 result["strategy"] = "googlebot_direct"
                 return result
 
@@ -442,7 +472,7 @@ class SmartFetcher:
             logger.info(f"[Strategy 2] Trying Googlebot UA with stealth")
             result = await self._fetch_with_ua(url, self.GOOGLEBOT_UA, use_stealth=True)
 
-            if result.get("success") and not self._is_cloudflare(result.get("html", "")):
+            if result.get("success") and not self._is_blocked_response(result):
                 result["strategy"] = "googlebot_stealth"
                 return result
 
@@ -451,7 +481,7 @@ class SmartFetcher:
             logger.info(f"[Strategy 3] Trying FlareSolverr")
             result = await self._fetch_flaresolverr(url)
 
-            if result.get("success") and not self._is_cloudflare(result.get("html", "")):
+            if result.get("success") and not self._is_blocked_response(result):
                 return result
 
         # Strategy 4: Proxy fallback
