@@ -78,6 +78,7 @@ class DataForSEOClient:
                 - indexed_description: str
                 - indexed_url: str (Google canonical)
                 - serp_position: int
+                - is_fallback: bool (True if found via site: instead of info:)
         """
         logger.info(f"get_indexed_data called for: {url}")
         logger.info(f"is_configured: {self.is_configured()}")
@@ -101,14 +102,44 @@ class DataForSEOClient:
             "indexed_description": None,
             "indexed_url": None,
             "serp_position": None,
+            "is_fallback": False,
             "fetch_time_ms": 0
         }
 
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower().replace("www.", "")
+
+        # Known SLD (Second Level Domains) that should be treated as TLDs
+        sld_list = {
+            'co.uk', 'co.nz', 'co.jp', 'co.kr', 'co.il', 'co.in', 'co.za',
+            'com.au', 'com.br', 'com.mx', 'com.ar', 'com.tr', 'com.ua',
+            'org.uk', 'org.au', 'net.au', 'gov.uk', 'ac.uk',
+            'it.com', 'us.com', 'eu.com', 'de.com', 'ru.com',  # .it.com etc
+        }
+
+        # Extract base domain for comparison (handle subdomains)
+        domain_parts = domain.split('.')
+
+        # Check if last 2 parts form an SLD
+        if len(domain_parts) >= 2:
+            potential_sld = '.'.join(domain_parts[-2:])
+            if potential_sld in sld_list:
+                # Use last 3 parts as base domain
+                base_domain = '.'.join(domain_parts[-3:]) if len(domain_parts) > 2 else domain
+                is_subdomain = len(domain_parts) > 3
+            else:
+                base_domain = '.'.join(domain_parts[-2:]) if len(domain_parts) > 2 else domain
+                is_subdomain = len(domain_parts) > 2
+        else:
+            base_domain = domain
+            is_subdomain = False
+
+        logger.info(f"Domain analysis: domain={domain}, base_domain={base_domain}, is_subdomain={is_subdomain}")
+
         try:
-            # Use info: operator to find specific URL in Google
-            parsed = urlparse(url)
-            domain = parsed.netloc
+            # Step 1: Try info: operator first (exact URL match)
             search_query = f"info:{url}"
+            logger.info(f"Trying info: query for: {url}")
 
             payload = [{
                 "keyword": search_query,
@@ -123,45 +154,97 @@ class DataForSEOClient:
             )
 
             data = response.json()
-            logger.info(f"DataForSEO response status_code: {data.get('status_code')}")
+            logger.info(f"DataForSEO info: response status_code: {data.get('status_code')}")
 
             if data.get("status_code") == 20000:
                 tasks = data.get("tasks", [])
                 if tasks and tasks[0].get("result"):
                     serp_result = tasks[0]["result"][0]
                     items = serp_result.get("items", [])
-                    logger.info(f"DataForSEO found {len(items)} items for domain: {domain}")
+                    logger.info(f"DataForSEO info: found {len(items)} items")
 
-                    # Extract base domain for comparison (handle subdomains)
-                    domain_parts = domain.split('.')
-                    base_domain = '.'.join(domain_parts[-2:]) if len(domain_parts) > 2 else domain
-                    logger.info(f"Comparing with base_domain: {base_domain}")
-
-                    # Find organic result matching our domain
+                    # Find organic result matching our domain EXACTLY
                     for item in items:
                         if item.get("type") == "organic":
-                            item_domain = item.get("domain", "")
+                            item_domain = item.get("domain", "").lower().replace("www.", "")
                             item_url = item.get("url", "")
-                            logger.debug(f"Checking item: domain={item_domain}, url={item_url}")
 
-                            # Match if domain contains our domain OR base domain matches
-                            if domain in item_domain or domain in item_url or base_domain in item_domain:
+                            # Strip www from our domains for comparison
+                            clean_domain = domain.lower().replace("www.", "")
+                            clean_base = base_domain.lower()
+
+                            # STRICT match: item domain must BE or END WITH our domain
+                            is_exact_match = (
+                                item_domain == clean_domain or
+                                item_domain == clean_base or
+                                item_domain.endswith("." + clean_domain) or
+                                item_domain.endswith("." + clean_base)
+                            )
+
+                            if is_exact_match:
                                 result["success"] = True
                                 result["indexed"] = True
                                 result["indexed_title"] = item.get("title")
                                 result["indexed_description"] = item.get("description")
                                 result["indexed_url"] = item_url
                                 result["serp_position"] = item.get("rank_absolute")
-                                logger.info(f"DataForSEO matched: indexed_url={item_url}")
+                                logger.info(f"DataForSEO info: matched: indexed_url={item_url}")
                                 break
 
-                    if not result["indexed"]:
-                        result["success"] = True
-                        result["indexed"] = False
-                        logger.info(f"DataForSEO: URL not found in SERP results")
-            else:
-                result["error"] = data.get("status_message", "API error")
-                logger.warning(f"DataForSEO API error: {result['error']}")
+            # Step 2: If info: didn't find anything, try site: for base domain
+            if not result["indexed"] and is_subdomain:
+                logger.info(f"info: didn't find result, trying site: for base domain: {base_domain}")
+
+                site_query = f"site:{base_domain}"
+                payload = [{
+                    "keyword": site_query,
+                    "location_code": 2840,
+                    "language_code": "en",
+                    "device": "desktop"
+                }]
+
+                response = await self._client.post(
+                    f"{self.BASE_URL}/serp/google/organic/live/advanced",
+                    json=payload
+                )
+
+                data = response.json()
+                logger.info(f"DataForSEO site: response status_code: {data.get('status_code')}")
+
+                if data.get("status_code") == 20000:
+                    tasks = data.get("tasks", [])
+                    if tasks and tasks[0].get("result"):
+                        serp_result = tasks[0]["result"][0]
+                        items = serp_result.get("items", [])
+                        logger.info(f"DataForSEO site: found {len(items)} items")
+
+                        # Take first organic result that matches base domain as Google canonical
+                        for item in items:
+                            if item.get("type") == "organic":
+                                item_domain = item.get("domain", "").lower().replace("www.", "")
+                                clean_base = base_domain.lower()
+
+                                # Only accept if item domain matches our base domain
+                                is_base_match = (
+                                    item_domain == clean_base or
+                                    item_domain.endswith("." + clean_base)
+                                )
+
+                                if is_base_match:
+                                    result["success"] = True
+                                    result["indexed"] = True
+                                    result["indexed_title"] = item.get("title")
+                                    result["indexed_description"] = item.get("description")
+                                    result["indexed_url"] = item.get("url")
+                                    result["serp_position"] = item.get("rank_absolute")
+                                    result["is_fallback"] = True  # Mark as fallback
+                                    logger.info(f"DataForSEO site: fallback matched: indexed_url={item.get('url')}")
+                                    break
+
+            if not result["indexed"]:
+                result["success"] = True
+                result["indexed"] = False
+                logger.info(f"DataForSEO: URL not found in SERP results")
 
         except Exception as e:
             logger.error(f"DataForSEO error: {e}")
