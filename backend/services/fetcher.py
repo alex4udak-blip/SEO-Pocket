@@ -11,6 +11,7 @@ Strategies (in order):
 """
 
 import asyncio
+import random
 import re
 import time
 from typing import Optional
@@ -172,20 +173,27 @@ class SmartFetcher:
         return any(ind in html_lower for ind in self.CLOUDFLARE_INDICATORS)
 
     def _build_translate_url(self, target_url: str, method: str = "website") -> str:
-        """Build Google Translate proxy URL."""
+        """Build Google Translate proxy URL with cache-busting."""
+        # Add cache-busting parameter to target URL
+        cache_buster = f"_cb={int(time.time())}{random.randint(1000,9999)}"
+        if "?" in target_url:
+            busted_url = f"{target_url}&{cache_buster}"
+        else:
+            busted_url = f"{target_url}?{cache_buster}"
+
         if method == "website":
             params = {
                 "sl": "auto",
                 "tl": "en",
                 "hl": "en",
-                "u": target_url
+                "u": busted_url
             }
             return f"{self.WEBSITE_URL}?{urlencode(params)}"
         else:
             params = {
                 "sl": "auto",
                 "tl": "en",
-                "u": target_url
+                "u": busted_url
             }
             return f"{self.TRANSLATE_URL}?{urlencode(params)}"
 
