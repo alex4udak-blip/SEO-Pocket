@@ -166,7 +166,16 @@ class SEOPocketApp {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.detail || 'Failed to analyze URL');
+                // Handle FastAPI validation errors
+                const errorMsg = typeof data.detail === 'string'
+                    ? data.detail
+                    : (data.detail?.msg || JSON.stringify(data.detail) || 'Failed to analyze URL');
+                throw new Error(errorMsg);
+            }
+
+            // Handle application-level errors (success: false)
+            if (data.success === false) {
+                throw new Error(data.error || 'Failed to analyze URL');
             }
 
             this.currentData = data;
