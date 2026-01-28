@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     dataforseo_login: Optional[str] = None
     dataforseo_password: Optional[str] = None
 
+    # Zyte API (for Cloudflare bypass)
+    zyte_api_key: Optional[str] = None
+
     # Redis (optional cache)
     redis_url: Optional[str] = None
 

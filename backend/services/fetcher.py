@@ -4,10 +4,11 @@ Multi-strategy approach to fetch pages as Googlebot sees them.
 
 Strategies (in order):
 0. Google Translate proxy (THE LOOPHOLE! - works on most blocked sites)
-1. Direct Googlebot UA (fastest, works for non-protected sites)
-2. Stealth Googlebot UA (for light Cloudflare)
-3. FlareSolverr (for heavy Cloudflare protection)
-4. Proxy fallback (last resort)
+1. Zyte API (for Cloudflare-protected sites - like affiliate.fm uses!)
+2. Direct Googlebot UA (fastest, works for non-protected sites)
+3. Stealth Googlebot UA (for light Cloudflare)
+4. FlareSolverr (for heavy Cloudflare protection)
+5. Proxy fallback (last resort)
 """
 
 import asyncio
@@ -46,10 +47,11 @@ class SmartFetcher:
 
     Strategies:
     0. Google Translate proxy (THE LOOPHOLE!)
-    1. Direct Googlebot UA
-    2. Stealth Googlebot UA
-    3. FlareSolverr
-    4. Proxy fallback
+    1. Zyte API (for Cloudflare bypass - same as affiliate.fm)
+    2. Direct Googlebot UA
+    3. Stealth Googlebot UA
+    4. FlareSolverr
+    5. Proxy fallback
     """
 
     # User Agents
@@ -109,6 +111,10 @@ class SmartFetcher:
         self.flaresolverr_client: Optional[httpx.AsyncClient] = None
         self.flaresolverr_available: bool = False
 
+        # Zyte client
+        self.zyte_client = None
+        self.zyte_available: bool = False
+
     async def start(self) -> None:
         """Initialize browser and HTTP clients."""
         # Initialize aiohttp session for Google Translate
@@ -154,6 +160,16 @@ class SmartFetcher:
             except Exception as e:
                 logger.warning(f"FlareSolverr not available: {e}")
 
+        # Initialize Zyte client
+        from services.zyte import ZyteClient
+        self.zyte_client = ZyteClient()
+        if self.zyte_client.is_configured():
+            await self.zyte_client.start()
+            self.zyte_available = True
+            logger.info("Zyte API client initialized")
+        else:
+            logger.info("Zyte API not configured (no ZYTE_API_KEY)")
+
         logger.info("SmartFetcher initialized")
 
     async def stop(self) -> None:
@@ -166,6 +182,8 @@ class SmartFetcher:
             await self.playwright.stop()
         if self.flaresolverr_client:
             await self.flaresolverr_client.aclose()
+        if self.zyte_client:
+            await self.zyte_client.stop()
 
     def _is_cloudflare(self, html: str) -> bool:
         """Check if response is Cloudflare challenge page."""
@@ -459,34 +477,46 @@ class SmartFetcher:
                     logger.info(f"[Strategy 0] SUCCESS via Google Translate")
                     return result
 
-        # Strategy 1: Direct Googlebot UA
+        # Strategy 1: Zyte API (for Cloudflare bypass - same as affiliate.fm!)
+        if self.zyte_available:
+            logger.info(f"[Strategy 1] Trying Zyte API for {url}")
+            result = await self.zyte_client.fetch_html(url)
+
+            if result.get("success"):
+                html = result.get("html", "")
+                if not self._is_cloudflare(html) and len(html) > 500:
+                    logger.info(f"[Strategy 1] SUCCESS via Zyte API")
+                    result["final_url"] = result.get("url", url)
+                    return result
+
+        # Strategy 2: Direct Googlebot UA
         if self.browser:
-            logger.info(f"[Strategy 1] Trying direct Googlebot UA")
+            logger.info(f"[Strategy 2] Trying direct Googlebot UA")
             result = await self._fetch_with_ua(url, self.GOOGLEBOT_UA, use_stealth=False)
 
             if result.get("success") and not self._is_blocked_response(result):
                 result["strategy"] = "googlebot_direct"
                 return result
 
-            # Strategy 2: Googlebot UA with stealth
-            logger.info(f"[Strategy 2] Trying Googlebot UA with stealth")
+            # Strategy 3: Googlebot UA with stealth
+            logger.info(f"[Strategy 3] Trying Googlebot UA with stealth")
             result = await self._fetch_with_ua(url, self.GOOGLEBOT_UA, use_stealth=True)
 
             if result.get("success") and not self._is_blocked_response(result):
                 result["strategy"] = "googlebot_stealth"
                 return result
 
-        # Strategy 3: FlareSolverr
+        # Strategy 4: FlareSolverr
         if self.flaresolverr_available:
-            logger.info(f"[Strategy 3] Trying FlareSolverr")
+            logger.info(f"[Strategy 4] Trying FlareSolverr")
             result = await self._fetch_flaresolverr(url)
 
             if result.get("success") and not self._is_blocked_response(result):
                 return result
 
-        # Strategy 4: Proxy fallback
+        # Strategy 5: Proxy fallback
         if self.proxy_url and self.browser:
-            logger.info(f"[Strategy 4] Trying proxy fallback")
+            logger.info(f"[Strategy 5] Trying proxy fallback")
             result = await self._fetch_with_ua(
                 url, self.GOOGLEBOT_UA, use_stealth=True, use_proxy=True
             )
