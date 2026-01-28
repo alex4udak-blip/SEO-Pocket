@@ -79,7 +79,11 @@ class DataForSEOClient:
                 - indexed_url: str (Google canonical)
                 - serp_position: int
         """
+        logger.info(f"get_indexed_data called for: {url}")
+        logger.info(f"is_configured: {self.is_configured()}")
+
         if not self.is_configured():
+            logger.warning("DataForSEO not configured - missing credentials")
             return {
                 "success": False,
                 "error": "DataForSEO not configured",
