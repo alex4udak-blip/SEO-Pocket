@@ -49,9 +49,16 @@ class AnalyzeResponse(BaseModel):
     # Google canonical (from DataForSEO or info:url)
     google_canonical: Optional[str] = None
 
-    # Dates
-    first_indexed: Optional[str] = None
-    published: Optional[str] = None
+    # Dates (from Wayback Machine / DataForSEO)
+    first_indexed: Optional[str] = None  # First archive date
+    last_indexed: Optional[str] = None   # Last archive date
+    published: Optional[str] = None      # Page publish date if available
+
+    # Related domains (from DataForSEO)
+    related_domains: list[str] = Field(default_factory=list)
+
+    # Alternate URLs (from HTML link rel=alternate)
+    alternate_urls: list[str] = Field(default_factory=list)
 
     # Cloaking detection
     cloaking: Optional[CloakingData] = None

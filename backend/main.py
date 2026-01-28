@@ -23,6 +23,7 @@ from core.config import settings
 from services.fetcher import SmartFetcher
 from services.cache import HTMLCache
 from services.dataforseo import DataForSEOClient
+from services.wayback import WaybackClient
 from api.routes import analyze_router, googlebot_router, health_router
 from api.routes import analyze, googlebot, health
 
@@ -38,12 +39,13 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 fetcher: SmartFetcher = None
 cache: HTMLCache = None
 dataforseo: DataForSEOClient = None
+wayback: WaybackClient = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage service lifecycle."""
-    global fetcher, cache, dataforseo
+    global fetcher, cache, dataforseo, wayback
 
     logger.info("=" * 50)
     logger.info("Starting SEO-Pocket Backend")
@@ -69,8 +71,13 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("DataForSEO not configured (DATAFORSEO_LOGIN, DATAFORSEO_PASSWORD)")
 
+    # Initialize Wayback Machine client
+    wayback = WaybackClient()
+    await wayback.start()
+    logger.info("Wayback Machine client initialized")
+
     # Inject dependencies into routes
-    analyze.set_dependencies(fetcher, cache, dataforseo)
+    analyze.set_dependencies(fetcher, cache, dataforseo, wayback)
     googlebot.set_dependencies(fetcher, cache)
     health.set_dependencies(fetcher, cache, dataforseo)
 
@@ -88,6 +95,8 @@ async def lifespan(app: FastAPI):
         await cache.stop()
     if dataforseo:
         await dataforseo.stop()
+    if wayback:
+        await wayback.stop()
 
 
 app = FastAPI(

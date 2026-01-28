@@ -39,6 +39,7 @@ class HTMLParser:
                 - html_lang: str
                 - hreflang: list[dict]
                 - robots: str
+                - alternate_urls: list[str]
         """
         return {
             "title": self._get_title(),
@@ -48,6 +49,7 @@ class HTMLParser:
             "html_lang": self._get_html_lang(),
             "hreflang": self._get_hreflang(),
             "robots": self._get_robots(),
+            "alternate_urls": self._get_alternate_urls(),
         }
 
     def _get_title(self) -> Optional[str]:
@@ -102,6 +104,20 @@ class HTMLParser:
         if meta and meta.get("content"):
             return meta["content"]
         return None
+
+    def _get_alternate_urls(self) -> list[str]:
+        """Get all alternate URLs (excluding hreflang which have separate field)."""
+        alternates = []
+        links = self.soup.find_all("link", attrs={"rel": "alternate"})
+        for link in links:
+            href = link.get("href")
+            # Skip hreflang entries (they have hreflang attribute)
+            if href and not link.get("hreflang"):
+                # Skip feed links
+                link_type = link.get("type", "")
+                if "rss" not in link_type.lower() and "atom" not in link_type.lower():
+                    alternates.append(href)
+        return alternates
 
 
 def extract_seo_data_fast(html: str) -> dict:

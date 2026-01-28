@@ -18,6 +18,7 @@ logger = get_logger(__name__)
 _fetcher = None
 _cache = None
 _dataforseo = None
+_wayback = None
 _cloaking_detector = None
 
 
@@ -28,12 +29,13 @@ class AnalyzeRequest(BaseModel):
     include_html: bool = False
 
 
-def set_dependencies(fetcher, cache, dataforseo):
+def set_dependencies(fetcher, cache, dataforseo, wayback=None):
     """Inject dependencies from main app."""
-    global _fetcher, _cache, _dataforseo, _cloaking_detector
+    global _fetcher, _cache, _dataforseo, _wayback, _cloaking_detector
     _fetcher = fetcher
     _cache = cache
     _dataforseo = dataforseo
+    _wayback = wayback
     _cloaking_detector = CloakingDetector()
 
 
@@ -147,11 +149,26 @@ async def _analyze(
             except Exception as e:
                 logger.warning(f"DataForSEO error: {e}")
 
+        # Get archive dates from Wayback Machine
+        first_indexed = None
+        last_indexed = None
+        if _wayback:
+            try:
+                wayback_data = await _wayback.get_archive_dates(url)
+                if wayback_data.get("success"):
+                    first_indexed = wayback_data.get("first_archived")
+                    last_indexed = wayback_data.get("last_archived")
+            except Exception as e:
+                logger.warning(f"Wayback error: {e}")
+
         # Build response
         redirects = []
         final_url = bot_result.get("final_url")
         if final_url and final_url != url:
             redirects.append(f"{url} -> {final_url}")
+
+        # Get alternate URLs from parsed data
+        alternate_urls = parsed.get("alternate_urls", [])
 
         return AnalyzeResponse(
             success=True,
@@ -160,6 +177,9 @@ async def _analyze(
             redirects=redirects,
             seo_data=seo_data,
             google_canonical=google_canonical,
+            first_indexed=first_indexed,
+            last_indexed=last_indexed,
+            alternate_urls=alternate_urls,
             cloaking=cloaking_data,
             fetch_time_ms=bot_result.get("fetch_time_ms", 0),
             strategy=bot_result.get("strategy"),

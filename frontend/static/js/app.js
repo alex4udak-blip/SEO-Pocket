@@ -49,6 +49,12 @@ class SEOPocketApp {
             googleCanonicalValue: document.getElementById('google-canonical-value'),
             chipFirstIndexed: document.getElementById('chip-first-indexed'),
             firstIndexedValue: document.getElementById('first-indexed-value'),
+            chipLastIndexed: document.getElementById('chip-last-indexed'),
+            lastIndexedValue: document.getElementById('last-indexed-value'),
+            chipHtmlCanonical: document.getElementById('chip-html-canonical'),
+            htmlCanonicalValue: document.getElementById('html-canonical-value'),
+            chipHreflang: document.getElementById('chip-hreflang'),
+            hreflangValue: document.getElementById('hreflang-value'),
             chipPublished: document.getElementById('chip-published'),
             publishedValue: document.getElementById('published-value'),
             chipHtmlLang: document.getElementById('chip-html-lang'),
@@ -266,13 +272,50 @@ class SEOPocketApp {
             this.elements.chipGoogleCanonical.style.display = 'none';
         }
 
-        // First Indexed Date
+        // First Indexed Date (from Wayback Machine)
         const firstIndexed = data.first_indexed;
         if (firstIndexed) {
             this.elements.chipFirstIndexed.style.display = 'flex';
             this.elements.firstIndexedValue.textContent = firstIndexed;
         } else {
             this.elements.chipFirstIndexed.style.display = 'none';
+        }
+
+        // Last Indexed Date (from Wayback Machine)
+        const lastIndexed = data.last_indexed;
+        if (lastIndexed && this.elements.chipLastIndexed) {
+            this.elements.chipLastIndexed.style.display = 'flex';
+            this.elements.lastIndexedValue.textContent = lastIndexed;
+        } else if (this.elements.chipLastIndexed) {
+            this.elements.chipLastIndexed.style.display = 'none';
+        }
+
+        // HTML Canonical (from page source)
+        const htmlCanonical = seoData.canonical;
+        if (htmlCanonical && this.elements.chipHtmlCanonical) {
+            this.elements.chipHtmlCanonical.style.display = 'flex';
+            try {
+                const canonicalUrl = new URL(htmlCanonical);
+                this.elements.htmlCanonicalValue.textContent = canonicalUrl.hostname;
+                this.elements.htmlCanonicalValue.title = htmlCanonical;
+            } catch {
+                this.elements.htmlCanonicalValue.textContent = htmlCanonical;
+            }
+        } else if (this.elements.chipHtmlCanonical) {
+            this.elements.chipHtmlCanonical.style.display = 'none';
+        }
+
+        // Hreflang languages (summary chip)
+        const hreflang = seoData.hreflang || data.hreflang || [];
+        if (hreflang.length > 0 && this.elements.chipHreflang) {
+            this.elements.chipHreflang.style.display = 'flex';
+            // Show language codes
+            const langs = hreflang.map(h => h.lang).slice(0, 4).join(', ');
+            const suffix = hreflang.length > 4 ? ` +${hreflang.length - 4}` : '';
+            this.elements.hreflangValue.textContent = langs + suffix;
+            this.elements.hreflangValue.title = hreflang.map(h => `${h.lang}: ${h.url}`).join('\n');
+        } else if (this.elements.chipHreflang) {
+            this.elements.chipHreflang.style.display = 'none';
         }
 
         // Published Date
