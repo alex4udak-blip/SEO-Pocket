@@ -20,7 +20,7 @@ class WaybackClient:
     CDX_API_URL = "https://web.archive.org/cdx/search/cdx"
     AVAILABILITY_URL = "https://archive.org/wayback/available"
 
-    def __init__(self, timeout: int = 15):
+    def __init__(self, timeout: int = 30):
         """
         Initialize Wayback client.
 
@@ -78,6 +78,8 @@ class WaybackClient:
         }
 
         try:
+            logger.info(f"Fetching Wayback dates for: {url}")
+
             # Get first snapshot
             first_response = await self._client.get(
                 self.CDX_API_URL,
@@ -89,11 +91,16 @@ class WaybackClient:
                 }
             )
 
+            logger.debug(f"First response status: {first_response.status_code}")
             if first_response.status_code == 200:
-                data = first_response.json()
-                if len(data) > 1:
-                    # First row is headers, second is data
-                    result["first_archived"] = self._parse_timestamp(data[1][0])
+                try:
+                    data = first_response.json()
+                    if len(data) > 1:
+                        # First row is headers, second is data
+                        result["first_archived"] = self._parse_timestamp(data[1][0])
+                        logger.info(f"First archived: {result['first_archived']}")
+                except Exception as e:
+                    logger.warning(f"Failed to parse first snapshot response: {e}")
 
             # Get last snapshot (reverse order)
             last_response = await self._client.get(
