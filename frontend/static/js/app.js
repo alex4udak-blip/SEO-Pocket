@@ -160,7 +160,7 @@ class SEOPocketApp {
             const response = await fetch(this.api, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url }),
+                body: JSON.stringify({ url, include_html: true }),
             });
 
             const data = await response.json();
