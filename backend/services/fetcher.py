@@ -473,9 +473,12 @@ class SmartFetcher:
 
             if result.get("success"):
                 html = result.get("html", "")
-                if not self._is_cloudflare(html) and len(html) > 500:
+                # Check for Cloudflare AND blocked response (403, etc)
+                if not self._is_cloudflare(html) and not self._is_blocked_response(result) and len(html) > 500:
                     logger.info(f"[Strategy 0] SUCCESS via Google Translate")
                     return result
+                else:
+                    logger.info(f"[Strategy 0] Google Translate returned blocked/403, trying next strategy")
 
         # Strategy 1: Zyte API (for Cloudflare bypass - same as affiliate.fm!)
         if self.zyte_available:
