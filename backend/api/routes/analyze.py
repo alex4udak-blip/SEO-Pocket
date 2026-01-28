@@ -3,8 +3,8 @@ Analyze endpoint.
 Main SEO analysis with cloaking detection.
 """
 
-from fastapi import APIRouter, Query, HTTPException
-from pydantic import HttpUrl
+from fastapi import APIRouter, Query, HTTPException, Body
+from pydantic import BaseModel, HttpUrl
 from typing import Optional
 from api.schemas import AnalyzeResponse, SEOData, CloakingData, HreflangEntry
 from services.parser import HTMLParser
@@ -21,6 +21,13 @@ _dataforseo = None
 _cloaking_detector = None
 
 
+class AnalyzeRequest(BaseModel):
+    """Request body for POST /api/analyze"""
+    url: str
+    detect_cloaking: bool = False
+    include_html: bool = False
+
+
 def set_dependencies(fetcher, cache, dataforseo):
     """Inject dependencies from main app."""
     global _fetcher, _cache, _dataforseo, _cloaking_detector
@@ -31,11 +38,27 @@ def set_dependencies(fetcher, cache, dataforseo):
 
 
 @router.get("/analyze", response_model=AnalyzeResponse)
-@router.post("/analyze", response_model=AnalyzeResponse)
-async def analyze_url(
+async def analyze_url_get(
     url: str = Query(..., description="URL to analyze"),
     detect_cloaking: bool = Query(False, description="Enable cloaking detection"),
     include_html: bool = Query(False, description="Include raw HTML in response"),
+) -> AnalyzeResponse:
+    """GET endpoint - accepts query parameters."""
+    return await _analyze(url, detect_cloaking, include_html)
+
+
+@router.post("/analyze", response_model=AnalyzeResponse)
+async def analyze_url_post(
+    request: AnalyzeRequest,
+) -> AnalyzeResponse:
+    """POST endpoint - accepts JSON body."""
+    return await _analyze(request.url, request.detect_cloaking, request.include_html)
+
+
+async def _analyze(
+    url: str,
+    detect_cloaking: bool = False,
+    include_html: bool = False,
 ) -> AnalyzeResponse:
     """
     Analyze URL and extract SEO data.
