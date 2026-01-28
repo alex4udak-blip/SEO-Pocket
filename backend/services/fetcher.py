@@ -289,6 +289,11 @@ class SmartFetcher:
                 "viewport": {"width": 1920, "height": 1080},
                 "locale": "en-US",
                 "timezone_id": "America/New_York",
+                "extra_http_headers": {
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
             }
 
             if use_proxy and self.proxy_url:
@@ -301,7 +306,11 @@ class SmartFetcher:
             if use_stealth and HAS_STEALTH:
                 await stealth_async(page)
 
-            response = await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
+            # Add cache-busting to URL
+            cache_buster = f"_cb={int(time.time())}{random.randint(1000,9999)}"
+            busted_url = f"{url}&{cache_buster}" if "?" in url else f"{url}?{cache_buster}"
+
+            response = await page.goto(busted_url, wait_until="domcontentloaded", timeout=self.timeout)
 
             if not response:
                 return {"success": False, "error": "No response"}
