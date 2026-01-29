@@ -184,6 +184,7 @@ async def _analyze(
             fetch_time_ms=bot_result.get("fetch_time_ms", 0),
             strategy=bot_result.get("strategy"),
             cached=cached_html is not None,
+            is_cloaked_content=bot_result.get("is_cloaked", False),
             html=bot_html if include_html else None,
         )
 

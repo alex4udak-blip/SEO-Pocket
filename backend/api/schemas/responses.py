@@ -67,6 +67,7 @@ class AnalyzeResponse(BaseModel):
     fetch_time_ms: int = 0
     strategy: Optional[str] = None
     cached: bool = False
+    is_cloaked_content: bool = False  # True if content was fetched via google-proxy (affiliate.fm)
 
     # Error info
     error: Optional[str] = None
