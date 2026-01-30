@@ -295,11 +295,42 @@
                 </div>
             </div>
 
-            <!-- Preview -->
-            <div class="preview-container">
+            <!-- Tabbed Preview (Mobile / Desktop / User) -->
+            <div class="preview-container tabbed-preview">
                 <div class="preview-header">
-                    <span class="preview-title">Googlebot Rendered View</span>
+                    <div class="preview-tabs">
+                        <button class="preview-tab active" data-view="mobile">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                                <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                            </svg>
+                            <span>Mobile Bot</span>
+                        </button>
+                        <button class="preview-tab" data-view="desktop">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                                <line x1="8" y1="21" x2="16" y2="21"></line>
+                                <line x1="12" y1="17" x2="12" y2="21"></line>
+                            </svg>
+                            <span>Desktop Bot</span>
+                        </button>
+                        <button class="preview-tab" data-view="user">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                            <span>User View</span>
+                        </button>
+                    </div>
                     <div class="preview-actions">
+                        <button id="toggle-screenshot-btn" class="preview-btn" title="Toggle Screenshot">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                <polyline points="21 15 16 10 5 21"></polyline>
+                            </svg>
+                            Screenshot
+                        </button>
                         <button id="preview-source-btn" class="preview-btn">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="16 18 22 12 16 6"></polyline>
@@ -316,6 +347,61 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- View Panels -->
+                <div class="preview-panels">
+                    <!-- Mobile Panel -->
+                    <div id="mobile-panel" class="preview-panel active" data-view="mobile">
+                        <div class="panel-content">
+                            <div class="panel-info">
+                                <span class="panel-title" id="mobile-title">Loading...</span>
+                                <span class="panel-canonical" id="mobile-canonical"></span>
+                                <span class="panel-time" id="mobile-time"></span>
+                            </div>
+                            <div class="panel-preview">
+                                <div class="screenshot-container" id="mobile-screenshot" style="display: none;">
+                                    <img src="" alt="Mobile Screenshot" class="screenshot-img">
+                                </div>
+                                <iframe id="mobile-frame" class="preview-frame" sandbox="allow-same-origin"></iframe>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Desktop Panel -->
+                    <div id="desktop-panel" class="preview-panel" data-view="desktop">
+                        <div class="panel-content">
+                            <div class="panel-info">
+                                <span class="panel-title" id="desktop-title">Loading...</span>
+                                <span class="panel-canonical" id="desktop-canonical"></span>
+                                <span class="panel-time" id="desktop-time"></span>
+                            </div>
+                            <div class="panel-preview">
+                                <div class="screenshot-container" id="desktop-screenshot" style="display: none;">
+                                    <img src="" alt="Desktop Screenshot" class="screenshot-img">
+                                </div>
+                                <iframe id="desktop-frame" class="preview-frame" sandbox="allow-same-origin"></iframe>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- User Panel -->
+                    <div id="user-panel" class="preview-panel" data-view="user">
+                        <div class="panel-content">
+                            <div class="panel-info">
+                                <span class="panel-title" id="user-title">Loading...</span>
+                                <span class="panel-canonical" id="user-canonical"></span>
+                                <span class="panel-time" id="user-time"></span>
+                            </div>
+                            <div class="panel-preview">
+                                <iframe id="user-frame" class="preview-frame" sandbox="allow-same-origin"></iframe>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Legacy single preview (hidden, for backward compatibility) -->
+            <div class="preview-container legacy-preview" style="display: none;">
                 <iframe id="preview-frame" class="preview-frame" sandbox="allow-same-origin"></iframe>
             </div>
 
@@ -337,20 +423,86 @@
         </div>
     </div>
 
-    <!-- Modal -->
+    <!-- Code Modal with Syntax Highlighting -->
     <div id="modal-overlay" class="modal-overlay">
-        <div class="modal">
+        <div class="modal code-modal">
             <div class="modal-header">
-                <span class="modal-title">Page Source Code</span>
-                <button id="modal-close" class="modal-close">
+                <div class="modal-tabs">
+                    <button class="modal-tab active" data-source="current">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="16 18 22 12 16 6"></polyline>
+                            <polyline points="8 6 2 12 8 18"></polyline>
+                        </svg>
+                        <span id="modal-source-label">Source Code</span>
+                    </button>
+                    <button class="modal-tab" data-source="mobile">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                        </svg>
+                        Mobile
+                    </button>
+                    <button class="modal-tab" data-source="desktop">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        </svg>
+                        Desktop
+                    </button>
+                    <button class="modal-tab" data-source="user">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        User
+                    </button>
+                </div>
+                <div class="modal-actions">
+                    <button id="modal-copy-btn" class="modal-action-btn" title="Copy to Clipboard">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
+                    <button id="modal-download-btn" class="modal-action-btn" title="Download HTML">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                    </button>
+                    <button id="modal-close" class="modal-close">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="code-stats">
+                    <span id="code-lines">0 lines</span>
+                    <span id="code-chars">0 chars</span>
+                </div>
+                <div class="code-container">
+                    <div class="line-numbers" id="line-numbers"></div>
+                    <pre id="source-code" class="source-code"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Screenshot Modal -->
+    <div id="screenshot-modal" class="modal-overlay">
+        <div class="modal screenshot-modal">
+            <div class="modal-header">
+                <span class="modal-title" id="screenshot-modal-title">Screenshot</span>
+                <button id="screenshot-modal-close" class="modal-close">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
                     </svg>
                 </button>
             </div>
-            <div class="modal-body">
-                <pre id="source-code" class="source-code"></pre>
+            <div class="modal-body screenshot-body">
+                <img id="screenshot-modal-img" src="" alt="Screenshot" class="screenshot-full">
             </div>
         </div>
     </div>

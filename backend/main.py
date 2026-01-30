@@ -24,8 +24,8 @@ from services.fetcher import SmartFetcher
 from services.cache import HTMLCache
 from services.dataforseo import DataForSEOClient
 from services.wayback import WaybackClient
-from api.routes import analyze_router, googlebot_router, health_router
-from api.routes import analyze, googlebot, health
+from api.routes import analyze_router, googlebot_router, health_router, googlebot_preview_router
+from api.routes import analyze, googlebot, health, googlebot_preview
 
 # Setup logging
 setup_logging("DEBUG" if settings.debug else "INFO")
@@ -80,6 +80,7 @@ async def lifespan(app: FastAPI):
     analyze.set_dependencies(fetcher, cache, dataforseo, wayback)
     googlebot.set_dependencies(fetcher, cache)
     health.set_dependencies(fetcher, cache, dataforseo)
+    googlebot_preview.set_dependencies(fetcher, cache)
 
     logger.info("=" * 50)
     logger.info("SEO-Pocket Backend ready!")
@@ -119,6 +120,7 @@ app.add_middleware(
 app.include_router(analyze_router, prefix="/api")
 app.include_router(googlebot_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
+app.include_router(googlebot_preview_router, prefix="/api")
 
 
 # Static files and frontend
