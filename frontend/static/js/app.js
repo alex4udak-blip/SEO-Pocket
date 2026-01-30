@@ -312,21 +312,25 @@ class SEOPocketApp {
     }
 
     highlightHtml(html) {
-        // Basic HTML syntax highlighting
-        return html
+        // Escape HTML first
+        const escaped = html
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+
+        // Apply syntax highlighting
+        return escaped
             // Comments
             .replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="code-comment">$1</span>')
             // DOCTYPE
             .replace(/(&lt;!DOCTYPE[^&]*&gt;)/gi, '<span class="code-doctype">$1</span>')
-            // Tags
-            .replace(/(&lt;\/?)([\w-]+)/g, '$1<span class="code-tag">$2</span>')
-            // Attributes
-            .replace(/(\s)([\w-]+)(=)/g, '$1<span class="code-attr">$2</span>$3')
-            // Attribute values
-            .replace(/(=)(&quot;|")([^"&]*)(&quot;|")/g, '$1<span class="code-value">"$3"</span>');
+            // Opening/closing tags with tag name
+            .replace(/(&lt;\/?)(\w+)/g, '$1<span class="code-tag">$2</span>')
+            // Attributes (word followed by =)
+            .replace(/\s([\w-]+)(=&quot;)/g, ' <span class="code-attr">$1</span>$2')
+            // Attribute values (content between &quot;)
+            .replace(/(=&quot;)([^&]*)(&quot;)/g, '$1<span class="code-value">$2</span>$3');
     }
 
     async copyModalCode() {
