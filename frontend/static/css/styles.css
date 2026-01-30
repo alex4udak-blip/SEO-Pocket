@@ -1397,6 +1397,16 @@ body {
     width: 95%;
     max-width: 1200px;
     max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.code-modal .modal-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
 }
 
 .code-modal .modal-header {
@@ -1486,8 +1496,10 @@ body {
 
 .code-container {
     display: flex;
+    flex: 1;
     max-height: calc(90vh - 140px);
     overflow: auto;
+    background: var(--bg-surface);
 }
 
 .line-numbers {
@@ -1501,6 +1513,8 @@ body {
     color: var(--text-tertiary);
     text-align: right;
     user-select: none;
+    white-space: pre;
+    min-width: 50px;
 }
 
 .code-modal .source-code {
